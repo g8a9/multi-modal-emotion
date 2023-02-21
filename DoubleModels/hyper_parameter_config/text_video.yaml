@@ -1,0 +1,38 @@
+program: ../text_video_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/text_audio_video_emotion_data"
+
+method: bayes
+
+metric:
+  goal: minimize
+  name: train/train_loss
+parameters:
+  epoch: 
+    values: [5 , 7 , 9]
+  learning_rate:
+    distribution: uniform
+    min: 0.000001
+    max: 0.0001
+  batch_size:
+    values: [2 , 4]
+  weight_decay:
+    values: [0.0001 , 0.00001 , 0.000001 , 0.0000001, 0.00000001]  
+  seed:
+    values: [32, 64, 96]
+  patience:
+    values: [10]
+  clip:
+    values: [1]
+  T_max:
+   values: [5,10]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['emotion' , 'sentiment']
+  model:
+    values: ['1MTL' , 'LateFusion']
