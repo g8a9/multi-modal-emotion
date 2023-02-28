@@ -60,13 +60,8 @@ def runModel( rank , df_train , df_val, df_test  ,param_dict , model_param , wan
     df_val = prepare_dataloader(df_val, batch_size = batch_size )
     df_test = prepare_dataloader(df_test , batch_size = batch_size)
 
-    # if param_dict['model'] == "VisualBert":
     model = VBertClassifier(model_param).to(rank)
-    # else:
-    #     #train, val , test = LstmDataset(df_train , max_len=max_len), LstmDataset(df_val , max_len=max_len) , LstmDataset(df_test , max_len=max_len)
-    #     glove_vec = df_train.get_glove_vocab()
-    #     model = LSTMClassifier(glove_vec , model_param).to(rank)
-
+    
     wandb.watch(model, log = "all")
     model = train_vbert_network(model, df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip )
     evaluate_vbert(model, df_test, Metric)
@@ -127,8 +122,6 @@ def main():
     param_dict['label2id'] = label2id
     param_dict['id2label'] = id2label
 
-    param_dict = {'epoch': 5, 'patience': 10, 'lr': 0.1, 'clip': 1, 'batch_size': 16, 'weight_decay': 1e-06, 'model': 'VisualBert', 'T_max': 5, 'seed': 64, 'weights': torch.Tensor([0.3667, 0.6333]), 'label2id': {'Negative': 0, 'Positive': 1}, 'id2label': {0: 'Negative', 1: 'Positive'}}
-    model_param = {'input_dim': 2, 'output_dim': 2, 'lstm_layers': 1, 'hidden_layers': [300]}
     print(f" in main \n param_dict = {param_dict} \n model_param = {model_param} \n df {args.dataset}")
 
     runModel("cuda",df_train , df_val , df_test ,param_dict , model_param , run )

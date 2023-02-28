@@ -1,17 +1,27 @@
-
 import torch
 from torch import nn
 import numpy as np
-import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image
 from decord import VideoReader
 from decord import cpu
+from pytorchvideo.data.encoded_video import EncodedVideo
 
 
 from utils.transforms import (
     GroupNormalize, GroupScale, GroupCenterCrop, 
     Stack, ToTorchFormatTensor
+)
+
+from torchvision.transforms import Compose, Lambda
+from torchvision.transforms._transforms_video import (
+    CenterCropVideo,
+    NormalizeVideo,
+)
+from pytorchvideo.transforms import (
+    ApplyTransformToKey,
+    ShortSideScale,
+    UniformTemporalSubsample
 )
 
 
@@ -59,6 +69,44 @@ def load_video(video_path):
 
     return torch_imgs
 
+
+def resnet3d_features(path):
+    side_size = 256
+    mean = [0.45, 0.45, 0.45]
+    std = [0.225, 0.225, 0.225]
+    crop_size = 256
+    num_frames = 8
+    sampling_rate = 8
+    frames_per_second = 30
+
+# Note that this transform is specific to the slow_R50 model.
+    transform =  ApplyTransformToKey(
+        key="video",
+        transform=Compose(
+            [
+                UniformTemporalSubsample(num_frames),
+                Lambda(lambda x: x/255.0),
+                NormalizeVideo(mean, std),
+                ShortSideScale(
+                    size=side_size
+                ),
+                CenterCropVideo(crop_size=(crop_size, crop_size))
+            ]
+        ),
+    )
+
+# The duration of the input clip is also specific to the model.
+    clip_duration = (num_frames * sampling_rate)/frames_per_second
+
+    video = EncodedVideo.from_path(path)
+    video_data = video.get_clip(start_sec=0, end_sec=clip_duration)
+    video_data = transform(video_data)
+    
+    return video_data['video']
+
+
+
+
 def collate_batch(batch): # batch is a pseudo pandas array of two columns
     """
     Here we are going to take some raw-input and pre-process them into what we need
@@ -69,12 +117,61 @@ def collate_batch(batch): # batch is a pseudo pandas array of two columns
 
     
     for (input_path , label) in batch:
-        video_list.append(load_video(input_path))
+        # print(input_path,"\n", flush = True)
+        # val = resnet3d_features(input_path)
+        # print(f"val  is {val}", flush = True)
+        video_list.append(resnet3d_features(input_path))
         label_list.append(label)
+
     
+
     return torch.stack(video_list)  , torch.Tensor(np.array(label_list))
 
 
+
+
+class ResNet50Classification(nn.Module):
+    """A simple ConvNet for binary classification."""
+    def __init__(self , args):
+        super(ResNet50Classification, self).__init__()
+
+        self.input_dim = args["input_dim"]
+        self.output_dim = args["output_dim"]
+        # self.output_dim = 7
+
+        self.hidden_dim = args['hidden_layers']
+
+        self.dropout = nn.Dropout(.5)
+
+        self.linear = nn.Linear(768, 300)
+
+        self.linear1 = nn.Linear(300, self.output_dim)
+
+        self.sigmoid = nn.Sigmoid()
+
+        self.resnet = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True).to("cuda")
+        self.resnet.blocks[5].proj = torch.nn.Linear(in_features=2048,out_features=768).to("cuda")
+
+
+
+    def forward(self,x):
+        # self.resnet.eval()
+
+        # print(f"x = {x}\n x.shape = {x.shape}", flush=True)
+        x = self.resnet(x)
+        # print(f"AFTER RESNET MODEL x = {x}\n x.shape = {x.shape}", flush=True)
+        x = self.dropout(x)
+        x = self.linear(x)
+        # print(f"AFTER LINEAR x = {x}\n x.shape = {x.shape}", flush=True)
+
+        x = self.sigmoid(x)
+
+        x = self.dropout(x)
+
+        x = self.linear1(x)
+        # print(f"OUTPUT x = {x}\n x.shape = {x.shape}", flush=True)
+
+        return x
 
 class VisualClassification(nn.Module):
     """A simple ConvNet for binary classification."""

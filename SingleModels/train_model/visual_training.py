@@ -13,19 +13,18 @@ def get_statistics(input,label,model,criterion,total_loss,Metric):
     label = label.to(f"cuda")
     
     
-    output = model(input.to(f"cuda"))
-    
-    #ADD
-    if output.__class__.__name__ == "SequenceClassifierOutput":
-            output = output.logits
+    output = model(input.to(f"cuda")).to("cuda")
 
+    # print(f"output shape is {output.shape}", flush = True)
 
     if criterion is not None:
         batch_loss = criterion(output, label.long())
         total_loss += batch_loss.item()
     
+    # print(f"labels are {label}", flush = True)
 
     Metric.update_metrics(torch.argmax(output , dim = 1) , label.long())
+    # print(f"output shape is {output.shape}", flush = True)
 
     return batch_loss , total_loss
 
@@ -39,10 +38,12 @@ def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
     for train_input, train_label in tqdm(train_dataloader , desc="training"):
         # Get Statisticis
         train_batch_loss , total_loss_train  = get_statistics(train_input , train_label , model , criterion , total_loss_train , Metric)
-        train_batch_loss.backward()
         if clip is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-        optimizer.step()
+        
+        model.zero_grad()
+        train_batch_loss.backward()  # Back propagate
+        optimizer.step()  # Run optimization step
     
     
     return model , optimizer , train_batch_loss,total_loss_train/len(train_dataloader.dataset)
@@ -67,21 +68,12 @@ def validate(val_dataloader , model , criterion, Metric , name = "val"):
 
 
 def visual_train( model, train_dataloader, val_dataloader, criterion , learning_rate, epochs ,  weight_decay , T_max , Metric,patience=None , clip=None):
-    
-    
-    
-   
 
     optimizer = AdamW(model.parameters(), lr= learning_rate, weight_decay=weight_decay)
-
-    
     earlystop = EarlyStopping("",model,patience,model_name=model.__class__.__name__)
-
     scheduler = CosineAnnealingLR(optimizer , T_max=T_max)  # To prevent fitting to local minima != global minima
 
     for epoch_num in tqdm(range(epochs), desc="epochs"):
-        model.train()
-
         optimizer.zero_grad()  # Zero out gradients before each epoch.
         
         model,optimizer,train_batch_loss,train_loss= one_epoch(train_dataloader, model , criterion , optimizer , clip, Metric) 
@@ -102,7 +94,6 @@ def visual_train( model, train_dataloader, val_dataloader, criterion , learning_
         Metric.reset_metrics()
         scheduler.step() # this is for CosineAnnealing
 
-        model.eval() # this is where we put the flag for evaluating on so we dont change anything by accident
 
         val_batch_loss,val_loss = validate(val_dataloader  , model , criterion , Metric)
 
@@ -123,15 +114,10 @@ def visual_train( model, train_dataloader, val_dataloader, criterion , learning_
         if patience is not None: # this is to make sure that gradietn descent isnt stuck in a local minima 
             if earlystop(model, val_loss):
                 model = earlystop.best_state
-
-    
     return model
 
 
 def evaluate_visual( model, test_dataloader , Metric):
-    # Flag for Evaluation so we dont change anything by accident
-    model.eval()
-
     validate(test_dataloader , model , None, Metric , name = "test")
     multiAcc , multiF1, multiRec, multiPrec , Acc, F1, Rec, Prec , ConfusionMatrix = Metric.compute_scores("test")
     d1 = {

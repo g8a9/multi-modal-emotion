@@ -33,7 +33,7 @@ parameters:
   T_max:
    values: [5,10]
   output_dim:
-    values: [1]
+    values: [7]
   input_dim:
     values: [3]
   hidden_layers:

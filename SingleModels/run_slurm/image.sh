@@ -28,5 +28,5 @@ module load cudnn/8.0.3
 
 source /home/prsood/projects/def-whkchun/prsood/sarcasm_venv/bin/activate
 
-wandb agent ddi/Image/b76flwb1 --count 20
-# python3 /home/prsood/projects/def-whkchun/prsood/multi-modal-sarcasm/text_nn.py
+# wandb agent ddi/Image/b76flwb1 --count 20
+python3 /home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/SingleModels/images_nn.py

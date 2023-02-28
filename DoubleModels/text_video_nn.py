@@ -77,7 +77,6 @@ def main():
     np.random.seed(config.seed)
     torch.random.manual_seed(config.seed)
 
-    
     param_dict = {
         'epoch':config.epoch ,
         'patience':config.patience ,
@@ -92,11 +91,28 @@ def main():
     }
 
     df = pd.read_pickle(f"{args.dataset}.pkl")
+    if param_dict['label_task'] == "sentiment":
+        number_index = "sentiment"
+        label_index = "sentiment_label"
+    else:
+        number_index = "emotion"
+        label_index = "emotion_label"
+
     if "IEMOCAP" in args.dataset:
         df = df[ (df['emotion_label'] != "surprised")  & (df['emotion_label'] != "fearful")  & (df['emotion_label'] != "other")  & (df['emotion_label'] != "disgusted")   ]
+        df_train, df_test, _, __ = train_test_split(df, df[number_index], test_size = 0.25, random_state = param_dict['seed'] , stratify=df[number_index])
+        df_train, df_val, _, __ = train_test_split(df_train, df_train[number_index], test_size = 0.25, random_state = param_dict['seed'] , stratify=df_train[number_index])
     else:
         # df = df[df["size_padding"] < 999426]
         df = df[df["audio_shape"] > 10000] # Still seeing what the best configuration is for these
+        # df_train, df_test, _, __ = train_test_split(df, df[number_index], test_size = 0.25, random_state = param_dict['seed'] , stratify=df[number_index])
+        # df_train, df_val, _, __ = train_test_split(df_train, df_train[number_index], test_size = 0.25, random_state = param_dict['seed'] , stratify=df_train[number_index])
+        df = df[ (df['emotion_label'] != "fear")  & (df['emotion_label'] != "disgust")]
+        df_train = df[df['split'] == "train"] 
+        df_test = df[df['split'] == "test"] 
+        df_val = df[df['split'] == "val"] 
+
+
         
     df = df[~df['timings'].isna()] # Still seeing what the best configuration is for these
 
@@ -105,16 +121,8 @@ def main():
     To do this we calculate 1 - (num_class/len(df)) the rest of the functions are just to order them properly and then convert to a tensor
     """
     
-    if param_dict['label_task'] == "sentiment":
-        number_index = "sentiment"
-        label_index = "sentiment_label"
-    else:
-        number_index = "emotion"
-        label_index = "emotion_label"
+    
     weights = torch.Tensor(list(dict(sorted((dict(1 - (df[number_index].value_counts()/len(df))).items()))).values()))
-    # weights = torch.Tensor([1,1,1,1,1,1,1])
-    df_train, df_test, _, __ = train_test_split(df, df[number_index], test_size = 0.25, random_state = param_dict['seed'] , stratify=df[number_index])
-    df_train, df_val, _, __ = train_test_split(df_train, df_train[number_index], test_size = 0.25, random_state = param_dict['seed'] , stratify=df_train[number_index])
     label2id = df.drop_duplicates(label_index).set_index(label_index).to_dict()[number_index]
     id2label = {v: k for k, v in label2id.items()}
 
@@ -122,7 +130,6 @@ def main():
         'input_dim':config.input_dim ,
         'output_dim':len(weights) ,
         'lstm_layers':config.lstm_layers ,
-        # Need to add the hidden layer count for each modality for their hidden layers 
         'hidden_layers':hidden_layer_count(config.hidden_layers) ,
     }
     

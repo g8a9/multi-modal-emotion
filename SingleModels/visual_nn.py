@@ -5,7 +5,7 @@ if __name__ == '__main__' and not __package__:
 import torch
 
 
-from .models.visual import VisualClassification
+from .models.visual import VisualClassification,ResNet50Classification
 from utils.data_loaders import VisualDataset
 from sklearn.model_selection import train_test_split
 import wandb
@@ -73,7 +73,7 @@ def runModel(rank , df_train , df_val , df_test , param_dict , model_param , wan
     # Dummy
     if param_dict['model'] == "Video":
         # this is our baseline model from Transformers
-        model = VisualClassification(model_param).to(rank)
+        model = ResNet50Classification(model_param).to(rank)
         
     # Else if Resnet
      
@@ -107,10 +107,11 @@ def main():
         'patience':config.patience ,
         'lr': config.learning_rate ,
         'clip': config.clip ,
-        'batch_size':config.batch_size ,
+        'batch_size': 8,#config.batch_size ,
         'weight_decay':config.weight_decay ,
         'model': config.model,
         'T_max':config.T_max ,
+        "seed":config.seed,
     }
 
     model_param = {

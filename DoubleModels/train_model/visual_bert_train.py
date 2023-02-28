@@ -46,12 +46,6 @@ def get_statistics(input,label,our_model,criterion,total_loss,Metric,check="trai
         # print("after crit")
     # print(f"output = {output}" , flush = True)
     Metric.update_metrics(torch.argmax(output , dim = 1) , label.long())
-    if check == "test":
-        y = torch.argmax(output , dim = 1)
-        with open(location,'a') as f:
-            for i in range(len(label)):
-                f.write(f"label: {label[i]} \tpred: {y[i]} \n")
-            f.write("\n")
     return batch_loss , total_loss 
      
 def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
@@ -135,7 +129,6 @@ def train_vbert_network(model, train_dataloader, val_dataloader, criterion,learn
         if patience is not None: # this is to make sure that gradietn descent isnt stuck in a local minima 
             if earlystop(model, val_loss):
                 model = earlystop.best_state
-    torch.save(model.state_dict(), "/home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/Inference/VisBert.pt")     
     return model
 
 def evaluate_vbert(model, test_dataloader , Metric , location = "/home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/Inference/visbertTest.txt"):
@@ -148,7 +141,5 @@ def evaluate_vbert(model, test_dataloader , Metric , location = "/home/prsood/pr
             "test/f1-score": F1,
             "test/ConfusionMatrix": ConfusionMatrix,
             }
-    wandb.log({**d1 , **multiF1, **multiRec, **multiPrec, **multiAcc})
-    with open(location,'a') as f:
-        f.write(f"\n in TEST \n Confusion Matrix = {ConfusionMatrix} \n")    
+    wandb.log({**d1 , **multiF1, **multiRec, **multiPrec, **multiAcc})   
     print(f"\n in TEST \n Confusion Matrix = {ConfusionMatrix} \n") 

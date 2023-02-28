@@ -10,7 +10,7 @@
 
 #SBATCH --gpus-per-node=v100l:2 # request GPU
 
-#SBATCH --ntasks-per-node=2
+#SBATCH --ntasks-per-node=4
 
 #SBATCH --cpus-per-task=6 # maximum CPU cores per GPU request: 6 on Cedar, 16 on Graham.
 

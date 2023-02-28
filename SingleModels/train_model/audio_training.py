@@ -2,60 +2,38 @@ import torch
 from tqdm import tqdm
 import wandb
 from utils.early_stopping import EarlyStopping
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
 from transformers.optimization import AdamW
 import numpy as np
-import os
 
 
-
-def get_statistics(input,label,model,criterion,total_loss, Metric):
+def get_statistics(input,label,model,criterion,total_loss, Metric,check = "train"):
     batch_loss = None
-    # print("inside Stats" , flush = True) 
     label = label.to(f"cuda")
+    input_values = input.to(f"cuda")
 
-
-    print(f"inputs before model is \n input = {input} \n labels = {label}")
-
-    
-    if model.__class__.__name__ == "AutoModelForAudioClassification":
-        output = model(input.to(f"cuda")) # our output should be of size : (batch_size x num_classes) so 4x7 -> argmax goes to 4x1
-        output = output.logits
-    else:
-        input_values = input[0]
-        att_mask = input[1]
-        output = model(input_values = input_values , attention_mask = att_mask) # our output should be of size : (batch_size x num_classes) so 4x7 -> argmax goes to 4x1
-
-
-    # print("before calc loss" , flush = True)
+    output = model(input_values) # our output should be of size : (batch_size x num_classes) so 4x7 -> argmax goes to 4x1
     if criterion is not None:
         batch_loss = criterion(output, label.long())
         total_loss += batch_loss.item()
     
-    print(f"outputs of the model = \n {output} \n {torch.argmax(output , dim = 1)}")
-    
-    # print("before update metrics" , flush = True)
     Metric.update_metrics(torch.argmax(output , dim = 1) , label.long())
-
     return batch_loss , total_loss 
 
 
 def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
     total_loss_train = 0
-
-
     for train_input, train_label in tqdm(train_dataloader , desc="training"):
-        # print("before getting Stats" , flush = True)
-
 
         train_batch_loss , total_loss_train  = get_statistics(train_input , train_label , model , criterion , total_loss_train , Metric)
-
-        train_batch_loss.backward()  # Back propagate
-        if clip is not None: # so gradients can beccome super big and super small, this clip is like a little flag that says we are too big or too small, 
-            # lets cut it off here eg. clip is 50, if our gradients are 200 itll jsut make it 50 
+        
+        if clip is not None: 
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+
+        model.zero_grad()
+        train_batch_loss.backward()  # Back propagate
         optimizer.step()  # Run optimization step
-    
+
     return  model , optimizer , train_batch_loss,total_loss_train/len(train_dataloader.dataset)
 
 
@@ -64,13 +42,9 @@ def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
 def validate(val_dataloader , model , criterion, Metric , name = "val"):
     total_loss_val = 0
     with torch.no_grad():
-
         for val_input, val_label in tqdm(val_dataloader, desc = "validate" if name == "val" else "testing" ):
-
-            # print(f"Validation input and labels \n input = {val_input} \n label = {val_label} \n")
-            print("VALIDATION")
-            val_batch_loss , total_loss_val = get_statistics(val_input , val_label , model , criterion , total_loss_val  , Metric )
-
+            val_batch_loss , total_loss_val = get_statistics(val_input , val_label , model , criterion , total_loss_val  , Metric , name)
+    
     return  val_batch_loss,total_loss_val/len(val_dataloader.dataset) 
 
 
@@ -86,13 +60,11 @@ def train_audio_network(model, train_dataloader, val_dataloader, criterion , lea
     """    
     
     optimizer = AdamW(model.parameters(), lr = learning_rate , weight_decay=weight_decay)
-
     earlystop = EarlyStopping("",model,patience , model_name=model.__class__.__name__)
-
+    # scheduler = CosineAnnealingWarmRestarts(optimizer , T_mult = 1 , T_0 = epochs//2 , eta_min = 1e-4)
     scheduler = CosineAnnealingLR(optimizer , T_max=T_max)
-
+    # model.train()
     for epoch_num in tqdm(range(epochs), desc="epochs"):
-        model.train() # we want the model flag for training to be set true, this way the model knows its about to change
         optimizer.zero_grad()  # Zero out gradients before each epoch.
         
         # this is where we start to train our model
@@ -111,9 +83,6 @@ def train_audio_network(model, train_dataloader, val_dataloader, criterion , lea
         wandb.log({**d1 , **multiF1, **multiRec, **multiPrec, **multiAcc}) 
         Metric.reset_metrics()
         scheduler.step() # this is for CosineAnnealing
-
-        model.eval() # this is where we put the flag for evaluating on so we dont change anything by accident
-        optimizer.zero_grad()  # Zero out gradients before each epoch.
 
         val_batch_loss,val_loss = validate(val_dataloader  , model , criterion , Metric)
 
@@ -138,7 +107,6 @@ def train_audio_network(model, train_dataloader, val_dataloader, criterion , lea
     return model
 
 def evaluate_audio(model, test_dataloader , Metric):
-    model.eval() # this is where we put the flag for evaluating on so we dont change anything by accident
     validate(test_dataloader  , model , None , Metric , name = "test")
     multiAcc , multiF1, multiRec, multiPrec , Acc, F1, Rec, Prec , ConfusionMatrix = Metric.compute_scores("test")
     d1 = {
@@ -150,5 +118,3 @@ def evaluate_audio(model, test_dataloader , Metric):
             }
     wandb.log({**d1 , **multiF1, **multiRec, **multiPrec, **multiAcc})
     print(f"\n in TEST \n Confusion Matrix = {ConfusionMatrix} \n")
-           
-

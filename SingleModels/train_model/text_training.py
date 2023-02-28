@@ -8,7 +8,7 @@ from torch.optim import AdamW
 
 import warnings
 import wandb
-warnings.filterwarnings("error")
+
 
 def get_statistics(input,label,model,criterion,total_loss, Metric , check = "train",location = "/home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/Inference/bertTest.txt"):
     batch_loss = None
@@ -30,12 +30,6 @@ def get_statistics(input,label,model,criterion,total_loss, Metric , check = "tra
     # print("before update metrics" , flush = True)
     # print(f"output of BERT is {output} \n shape of output is {output.shape}\n")
     Metric.update_metrics(torch.argmax(output , dim = 1) , label.long())
-    if check == "test":
-        y = torch.argmax(output , dim = 1)
-        with open(location,'a') as f:
-            for i in range(len(label)):
-                f.write(f"label: {label[i]} \tpred: {y[i]} \n")
-            f.write("\n")
     return batch_loss , total_loss
 
 def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
@@ -78,7 +72,6 @@ def train_text_network(model, train_dataloader, val_dataloader, criterion , lear
     scheduler = CosineAnnealingLR(optimizer , T_max=T_max)
 
     for epoch_num in tqdm(range(epochs), desc="epochs"):
-        # model.train() # we want the model flag for training to be set true, this way the model knows its about to change
         optimizer.zero_grad()  # Zero out gradients before each epoch.
         
         # this is where we start to train our model
@@ -119,13 +112,10 @@ def train_text_network(model, train_dataloader, val_dataloader, criterion , lear
         if patience is not None: # this is to make sure that gradietn descent isnt stuck in a local minima 
             if earlystop(model, val_loss):
                 model = earlystop.best_state
-    torch.save(model.state_dict(), "/home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/Inference/Bert.pt")
     return model
 
 def evaluate_text(model, test_dataloader , Metric , location = "/home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/Inference/bertTest.txt"):
-    # model.eval() # this is where we put the flag for evaluating on so we dont change anything by accident
-    name = "test"
-    validate(test_dataloader  , model , None , Metric , name , location)
+    validate(test_dataloader  , model , None , Metric , "test" , location)
     multiAcc , multiF1, multiRec, multiPrec , Acc, F1, Rec, Prec , ConfusionMatrix = Metric.compute_scores("test")
     d1 = {
             "test/total_acc_test": Acc,
@@ -135,7 +125,4 @@ def evaluate_text(model, test_dataloader , Metric , location = "/home/prsood/pro
             "test/ConfusionMatrix": ConfusionMatrix,
             }
     wandb.log({**d1 , **multiF1, **multiRec, **multiPrec, **multiAcc})
-    with open(location,'a') as f:
-        f.write(f"\n in TEST \n Confusion Matrix = {ConfusionMatrix} \n")    
-    print(f"\n in TEST \n Confusion Matrix = {ConfusionMatrix} \n")    
-  
+    

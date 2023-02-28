@@ -245,7 +245,7 @@ class BertDataset(Dataset):
     """
 
     def __init__(self, df , max_len , feature_col , label_col):
-        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+        tokenizer = AutoTokenizer.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
 
         self.labels = df[label_col].values.tolist()
         
@@ -256,4 +256,4 @@ class BertDataset(Dataset):
     def __len__(self): return len(self.labels)
 
 
-    def __getitem__(self, idx): return self.texts[idx], np.array(self.labels[idx])
+    def __getitem__(self, idx): return self.texts[idx], self.labels[idx]

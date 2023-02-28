@@ -51,7 +51,7 @@ def runModel( rank , df_train , df_val, df_test  ,param_dict , model_param , wan
     lstm_layers = model_param['lstm_layers']
     hidden_layers = model_param['hidden_layers']
 
-    criterion = torch.nn.CrossEntropyLoss().to(rank)
+    criterion = torch.nn.CrossEntropyLoss(weight=weights.to(rank)).to(rank)
     Metric = Metrics(num_classes = num_labels, id2label = id2label , rank = rank)
     df_train = prepare_dataloader(df_train, batch_size = batch_size )
     df_val = prepare_dataloader(df_val, batch_size = batch_size )
@@ -104,6 +104,11 @@ def main():
     Due to data imbalance we are going to reweigh our CrossEntropyLoss
     To do this we calculate 1 - (num_class/len(df)) the rest of the functions are just to order them properly and then convert to a tensor
     """
+    weights = torch.Tensor(list(dict(sorted((dict(1 - (df['emotion'].value_counts()/len(df))).items()))).values()))
+
+    
+    label2id = df.drop_duplicates('label').set_index('label').to_dict()['emotion']
+    id2label = {v: k for k, v in label2id.items()}
     try:
         weights = torch.Tensor(list(dict(sorted((dict(1 - (df['emotion'].value_counts()/len(df))).items()))).values()))
         # weights = torch.Tensor([1,1,1,1,1,1,1])
@@ -123,9 +128,6 @@ def main():
     param_dict['weights'] = weights
     param_dict['label2id'] = label2id
     param_dict['id2label'] = id2label
-
-    param_dict = {'epoch': 5, 'patience': 10, 'lr': 0.017563826602592172, 'clip': 1, 'batch_size': 16, 'weight_decay': 1e-07, 'model': 'BERT', 'T_max': 5, 'seed': 32, 'weights': torch.Tensor([0.3667, 0.6333]), 'label2id': {'Negative': 0, 'Positive': 1}, 'id2label': {0: 'Negative', 1: 'Positive'}}
-    model_param = {'input_dim': 2, 'output_dim': 2, 'lstm_layers': 1, 'hidden_layers': [300]}
 
     print(f" in main \n param_dict = {param_dict} \n model_param = {model_param} \n df {args.dataset}")
 

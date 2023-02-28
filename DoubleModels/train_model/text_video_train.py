@@ -30,24 +30,17 @@ def get_statistics(input,label,model,criterion,total_loss,Metric,check="train",l
         task_id = np.random.choice([0,1], p = [.6,.4]) # 60% text and 40% img
     elif model.__class__.__name__ == "BertVideoMAE_LateFusion_Classifier":
         task_id = None
-    # print(f"task_id = {task_id}" , flush = True)
     output = model(input_ids=input_ids, video_embeds=video_embeds, task_id = task_id ,attention_mask=attention_mask, check = check)
-    
-    # print(f"Outputs = \n {output}, \n")
-   
+       
     if criterion is not None:
-        # print("before crit")
         batch_loss = criterion(output, label)
         total_loss += batch_loss.item()
-        # print("after crit")
-    # print(f"output = {output}" , flush = True)
+        
     Metric.update_metrics(torch.argmax(output , dim = 1) , label.long())
     return batch_loss , total_loss 
      
 def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
-    total_loss_train = 0
-    # print("in one epoch")
-   
+    total_loss_train = 0   
     for train_input, train_label in tqdm(train_dataloader , desc="training"):
         train_batch_loss , total_loss_train = get_statistics(train_input , train_label , model , criterion , total_loss_train , Metric)
         
@@ -63,14 +56,11 @@ def one_epoch(train_dataloader , model , criterion , optimizer, clip , Metric):
 
 
 def validate(val_dataloader , model , criterion, Metric , name="val" , location = "val"):
-    
-
     total_loss_val = 0
     with torch.no_grad():
         for val_input, val_label in tqdm(val_dataloader, desc="validate" if name == "val" else "testing"):
             val_batch_loss , total_loss_val = get_statistics(val_input , val_label , model , criterion , total_loss_val , Metric , name , location)
-            
-  
+    
     return val_batch_loss,total_loss_val/len(val_dataloader.dataset)
 
     

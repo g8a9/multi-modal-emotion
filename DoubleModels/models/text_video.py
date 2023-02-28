@@ -1,23 +1,17 @@
 import torch
 from torch import nn
-from transformers import BertModel , VideoMAEModel , VideoMAEFeatureExtractor , AutoModel
+from transformers import  VideoMAEModel  , AutoModel
 import numpy as np
 from pytorchvideo.data.encoded_video import EncodedVideo
-
 
 from pytorchvideo.transforms import (
     ApplyTransformToKey,
     Normalize,
     RandomShortSideScale,
-    RemoveKey,
-    ShortSideScale,
     UniformTemporalSubsample,
 )
 
-from torchvision.transforms._transforms_video import (
-    CenterCropVideo,
-    NormalizeVideo,
-)
+from torchvision.transforms._transforms_video import NormalizeVideo
 
 from torchvision.transforms import (
     Compose,
@@ -26,28 +20,7 @@ from torchvision.transforms import (
     RandomHorizontalFlip,
     Resize,
 )
-from torchvision.transforms import functional as F
-class Crop:
-
-  def __init__(self , params):
-    self.params = params
-    self.x = 1
-
-  def __call__(self , frames):
-      a,b,c,d = self.params
-      new_vid = torch.rand((3 , 16 , c , d))
-      # print(frames.shape , flush = True)
-      for idx , frame in enumerate(frames):
-          # print(frame.shape , flush = True)
-          new_vid[idx] = F.crop(frame, *self.params)
-      return new_vid
-
-  def __repr__(self) -> str:
-        return (
-            self.__class__.__name__ 
-        )
-
-
+from utils.global_functions import Crop
 
 def videoMAE_features(path  , clip_duration , speaker , check):
     if clip_duration == None:
@@ -60,12 +33,18 @@ def videoMAE_features(path  , clip_duration , speaker , check):
             beg = 0
             end = 500
 
-    feature_extractor = VideoMAEFeatureExtractor.from_pretrained("MCG-NJU/videomae-base")
-    mean = feature_extractor.image_mean
-    std = feature_extractor.image_std
-    resize_to = feature_extractor.size['shortest_edge']
+    # feature_extractor = VideoMAEFeatureExtractor.from_pretrained("MCG-NJU/videomae-base")
+    # mean = feature_extractor.image_mean
+    # std = feature_extractor.image_std
+    # resize_to = feature_extractor.size['shortest_edge']
+    mean = [0.485, 0.456, 0.406] 
+    std = [0.229, 0.224, 0.225] 
+    resize_to = {'shortest_edge': 224}
+    resize_to = resize_to['shortest_edge']
     num_frames_to_sample = 16 # SET by MODEL CANT CHANGE
 
+    # i hardcoded the feature extractor stuff just because it saves a couple milliseconds every run, so hopefully makes 
+    # it a tad faster overall
     if check == "train":
         transform = Compose(
             [
@@ -117,10 +96,6 @@ def collate_batch(batch , check): # batch is a pseudo pandas array of two column
     Here we are going to take some raw-input and pre-process them into what we need
     So we can see all the steps in the ML as they go along
     """
-
-
-	# pdb.set_trace()
-    
     video_list = []
     input_list = []
     att_list = []
@@ -133,8 +108,8 @@ def collate_batch(batch , check): # batch is a pseudo pandas array of two column
         att_list.append(text['attention_mask'].tolist()[0])
         # tok_list.append(text['token_type_ids'].tolist()[0])
         
-        vid_path = input[1]#[6:] for debug
-        video_list.append(videoMAE_features(vid_path , input[2] , input[3] , check))
+        vid_features = input[1]#[6:] for debug
+        video_list.append(videoMAE_features(vid_features['vid_path'] , vid_features['timings'] , vid_features['speaker'] , check))
         label_list.append(label)
     
     text = {'input_ids':torch.Tensor(np.array(input_list)).type(torch.LongTensor) , 
@@ -179,8 +154,6 @@ class BertVideoMAE_MTL1Shared_Classifier(nn.Module):
         self.shared_layer = nn.Linear(768,768)
         torch.nn.init.xavier_normal_(self.shared_layer.weight)
         
-
-
         self.bert = AutoModel.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
         self.bert.embeddings = CustomRobLayer(self.bert.embeddings , self.shared_layer)
 
@@ -188,52 +161,20 @@ class BertVideoMAE_MTL1Shared_Classifier(nn.Module):
         self.videomae.embeddings = CustomOriginalLayer(self.videomae.embeddings,self.shared_layer)
 
         self.dropout = nn.Dropout(dropout)
-
         self.fc_norm = nn.LayerNorm(768)
-
         self.linear_test = nn.Linear(768, self.output_dim)
-
-        self.linear = nn.Linear(768, 600)
-
-        self.linear1 = nn.Linear(600, 300)
-
-        self.final = nn.Linear(300, self.output_dim)
-
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input_ids , video_embeds , task_id ,attention_mask = None , token_type_ids = None , check = "train"):
         output = 0
         if task_id == 0:
-            
-            # print(f"INPUT IDS ARE,  {input_ids} \n with shape {input_ids.shape}" , flush = True)
-            # print(f"TOKEN IDS ARE, with shape {token_type_ids.shape}" , flush = True)
-            # print(f"ATT IDS ARE, with shape {attention_mask.shape}" , flush = True)
-            # print("Inside text ," , flush = True)
             output = self.bert(input_ids = input_ids , attention_mask = attention_mask)['pooler_output']
         else:
-            # print("Inside video ," , flush = True)
             vid_features = self.videomae(video_embeds)
             output = self.fc_norm(torch.mean(vid_features[0], dim=1))
-
         # Batch_size x 768
-
-
         dropout_output = self.dropout(output)
         linear_output =  self.linear_test(dropout_output)
-        # sigmoid_output = self.sigmoid(linear_output)
-
-        # dropout_output = self.dropout(output)
-        # linear_output = self.linear(dropout_output)
-        # sigmoid_output = self.sigmoid(linear_output)
-
-        # dropout_output = self.dropout(sigmoid_output)
-        # linear1_output = self.linear1(dropout_output)
-        # sigmoid_output = self.sigmoid(linear1_output)
-
-        # dropout_output = self.dropout(sigmoid_output)
-        # final_output = self.final(dropout_output)
-        # sigmoid_output = self.sigmoid(final_output)
-        # print(f"output for task_id = {task_id} is \n {linear_output} \n" , flush = True)
+        
         return linear_output # returns [batch_size,output_dim]
 
 class BertVideoMAE_LateFusion_Classifier(nn.Module):
@@ -250,40 +191,20 @@ class BertVideoMAE_LateFusion_Classifier(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         self.fc_norm = nn.LayerNorm(768)
-        self.linear = nn.Linear(768*2, 600)
-        self.linear_test = nn.Linear(768*2, self.output_dim)
+        self.linear = nn.Linear(768*2, self.output_dim)
 
-        self.linear1 = nn.Linear(600, 300)
-
-        self.final = nn.Linear(300, self.output_dim)
-
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input_ids , video_embeds, task_id = None , attention_mask = None , token_type_ids = None , check = "train"):
         # print("here \n \n inside late fusion" , flush=True)
         _, pooled_output = self.bert(input_ids= input_ids, attention_mask=attention_mask,return_dict=False)
 
         vid_features = self.videomae(video_embeds)
-
-        # print(f"\n pooled output from BERT = \n {pooled_output}, with shape = \n {pooled_output.shape} " , flush = True)
-        # print(f"\n vid_features from VIDEOMAE = \n {vid_features[0]}, with shape = \n {vid_features[0].shape} " , flush = True)
         video_embeds = self.fc_norm(torch.mean(vid_features[0], dim=1))
+
         comb_features = torch.cat([pooled_output,video_embeds],dim=1)
         # Batch_size x 768*2
 
         dropout_output = self.dropout(comb_features)
-        linear_output =  self.linear_test(dropout_output)
+        linear_output =  self.linear(dropout_output)
         
-        # linear_output = self.linear(dropout_output)
-        # sigmoid_output = self.sigmoid(linear_output)
-
-        # dropout_output = self.dropout(sigmoid_output)
-        # linear1_output = self.linear1(dropout_output)
-        # sigmoid_output = self.sigmoid(linear1_output)
-
-        # dropout_output = self.dropout(sigmoid_output)
-        # final_output = self.final(dropout_output)
-        # sigmoid_output = self.sigmoid(final_output)
-
         return linear_output # returns [batch_size,output_dim]
-        # return sigmoid_output # returns [batch_size,output_dim]

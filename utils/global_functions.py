@@ -12,9 +12,8 @@ from torchmetrics.classification import MulticlassF1Score , MulticlassRecall , M
 from torchvision.transforms import functional as F
 from torch import nn
 from torch.nn import functional as Fnn
-
-
-        
+import wandb
+import os
 
 def pool(input : np.array , mode : str) -> np.array:
     """
@@ -43,7 +42,7 @@ class Crop:
           new_vid[idx] = F.crop(frame, *self.params)
       return new_vid
 
-class F1_Loss(nn.Module):
+class PrecisionLoss(nn.Module):
     '''Calculate F1 score. Can work with gpu tensors
   
     The original implmentation is written by Michal Haltuf on Kaggle.
@@ -61,22 +60,23 @@ class F1_Loss(nn.Module):
     - http://www.ryanzhang.info/python/writing-your-own-loss-function-module-for-pytorch/
     '''
 
-    def __init__(self, num_classes = -1 , weights = torch.Tensor([1]), beta = 1, epsilon=1e-7):
+    def __init__(self, num_classes = -1 , weights = None, epsilon=1e-7):
         super().__init__()
-        self.weights = weights 
         # Normalize thew weights
-        if self.weights.sum() != 1:
-            self.weights /= self.weights.sum()
+        if weights == None:
+            weights = torch.ones(num_classes)
+        # Normalize thew weights
+        self.weights = weights / weights.sum()
         self.epsilon = epsilon
-        self.beta = beta
         self.num_classes = num_classes
         self.softmax = nn.Softmax(dim=1)
+        self.fc_norm = nn.LayerNorm(self.num_classes)
         
     def forward(self, y_pred, y_true,):
         """
-        preds first , truth/target second and must be int64
+        preds first as logits, truth/target second and must be int64
         """
-        pred_sm = self.softmax(y_pred)
+        pred_sm = self.fc_norm(self.softmax(y_pred))
         y_pred = torch.argmax( pred_sm , dim = 1)
 
         y_true = Fnn.one_hot(y_true, self.num_classes).to(torch.float32)
@@ -84,16 +84,46 @@ class F1_Loss(nn.Module):
 
         cnf_matrix = y_true.T @ (pred_sm*y_pred)
         tp = torch.diag(cnf_matrix)
-        fp = cnf_matrix.sum(axis=0) - tp  
+        fp = cnf_matrix.sum(axis=0) - tp 
         precision = tp / (tp + fp + self.epsilon)
-
-        # fn = cnf_matrix.sum(axis=1) - tp
-        # recall = tp / (tp + fn + self.epsilon)
-        # # F0.5-Measure = (1.25 * Precision * Recall) / (0.25 * Precision + Recall)
-        # f1 = ((1+self.beta**2)*precision*recall) / (((self.beta**2)*precision) + recall + self.epsilon)
-        # f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
         
         return 1 - (precision*self.weights).sum()
+class FBetaLoss(nn.Module):
+
+    def __init__(self, num_classes = -1 , weights = None, beta = 1, epsilon=1e-7):
+        super().__init__()
+        # Normalize thew weights
+        if weights == None:
+            weights = torch.ones(num_classes)
+        self.weights = weights / weights.sum()
+        self.epsilon = epsilon
+        self.beta = beta
+        self.num_classes = num_classes
+        self.softmax = nn.Softmax(dim=1)
+        self.fc_norm = nn.LayerNorm(self.num_classes)
+        
+    def forward(self, y_pred, y_true,):
+        """
+        preds first as logits, truth/target second and must be int64
+        """
+        pred_sm = self.fc_norm(self.softmax(y_pred))
+        y_pred = torch.argmax( pred_sm , dim = 1)
+
+        y_true = Fnn.one_hot(y_true, self.num_classes).to(torch.float32)
+        y_pred = Fnn.one_hot(y_pred, self.num_classes).to(torch.float32)
+
+        cnf_matrix = y_true.T @ (pred_sm*y_pred)
+        tp = torch.diag(cnf_matrix)
+        fp = cnf_matrix.sum(axis=0) - tp 
+        precision = tp / (tp + fp + self.epsilon)
+
+        fn = cnf_matrix.sum(axis=1) - tp
+        recall = tp / (tp + fn + self.epsilon)
+        # F0.5-Measure = (1.25 * Precision * Recall) / (0.25 * Precision + Recall)
+        f1 = ((1+self.beta**2)*precision*recall) / (((self.beta**2)*precision) + recall + self.epsilon)
+        f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
+        
+        return 1 - (f1*self.weights).sum()
 
 class Metrics:
     """
@@ -180,6 +210,37 @@ def hidden_layer_count(string):
         return list(map(int, x))
     raise ArgumentParser.ArgumentTypeError(f'Missing a dimension in hidden layers, Need to input an even amount of dimensions, that is greater then 1 : {string}')
 
+def save_model(model , optimizer , criterion , scheduler , epoch):
+    if epoch == 0:
+        try:
+            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/")
+        except:
+            pass            
+        try:
+            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/")
+        except:
+            pass            
+        try:
+            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/")
+        except:
+            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/")
+    try:
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': criterion,
+            'scheduler' : scheduler.state_dict(),
+            }, f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/{epoch}.pt")
+    except:
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': criterion,
+            'scheduler' : scheduler.state_dict(),
+            }, f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/{epoch}.pt")
+
 
 def arg_parse(description):
     """
@@ -197,6 +258,8 @@ def arg_parse(description):
     parser.add_argument("--patience", "-p", help="Set the patience" , default=10.0, type=float)
     parser.add_argument("--T_max", "-t", help="Set the gradient T_max" , default=10, type=int)
     parser.add_argument("--mask", "-ma", help="True/False on if we want to use masking in model" , default=False, type=bool)
+    parser.add_argument("--loss", "-ls", help="Which Loss function we are going to use" , default="CrossEntropy", type=str)
+    parser.add_argument("--beta", "-beta", help="For FBeta loss, what beta to pick" , default=1, type=float)
 
     # Set the seed
     parser.add_argument("--seed", "-s", help="Set the random seed" , default=32, type=int)
@@ -214,7 +277,5 @@ def arg_parse(description):
     parser.add_argument("--early_div"  , "-ed", help="If we should do division earlier in the transformer" , default=False , type = bool)
     parser.add_argument("--dropout"  , "-dr", help="the rate for each dropout layer" , default=0.1 , type = float)
     parser.add_argument("--num_layers"  , "-nl", help="the number of layers in our transformers model" , default=12 , type = int)
+    parser.add_argument("--learn_PosEmbeddings"  , "-lpe", help="If we should learn our positional embeddings" , default=False , type = bool)
     return parser.parse_args()
-
- 
-
