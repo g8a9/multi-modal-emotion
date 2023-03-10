@@ -6,9 +6,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import math
-from transformers import  VideoMAEModel  , AutoModel , AutoProcessor , AutoConfig
+from transformers import  VideoMAEModel  , AutoModel , AutoProcessor
 from transformers.models.wav2vec2.modeling_wav2vec2 import _compute_mask_indices
-from utils.TAVFormer import TransformerEncoder , VideoMAEEncoder
+from utils.TAVFormer import TransformerEncoder
 
 import numpy as np
 from pytorchvideo.data.encoded_video import EncodedVideo
@@ -38,59 +38,9 @@ import dill as pickle
 
 from torch.utils.checkpoint import checkpoint
 
-from torch.utils.data.sampler import Sampler
-class MySampler(Sampler):
-    
-    def __init__(self, weights, num_samples, replacement = True , epoch = 0) -> None:
-        if not isinstance(num_samples, int) or isinstance(num_samples, bool) or \
-                num_samples <= 0:
-            raise ValueError("num_samples should be a positive integer "
-                             "value, but got num_samples={}".format(num_samples))
-        if not isinstance(replacement, bool):
-            raise ValueError("replacement should be a boolean value, but got "
-                             "replacement={}".format(replacement))
-        self.weights = torch.as_tensor(weights, dtype=torch.double)
-        self.num_samples = num_samples
-        self.replacement = replacement
-        self.epoch = epoch
-
-    def __iter__(self):
-        if self.epoch % 2 == 0:
-            self.epoch += 1
-            rand_tensor = torch.multinomial(self.weights, self.num_samples, self.replacement)
-            yield from iter(rand_tensor.tolist())
-        else:
-            # TODO: DATASET SPECIFIC
-            self.epoch += 1
-            yield from iter(range(self.num_samples))
-
-    def __len__(self) -> int:
-        return self.num_samples
-    
-class NewCrossEntropyLoss(nn.Module):
-    """
-    This criterion (`CrossEntropyLoss`) combines `LogSoftMax` and `NLLLoss` in one single class.
-    
-    NOTE: Computes per-element losses for a mini-batch (instead of the average loss over the entire mini-batch).
-    """
-    
-
-    def __init__(self, class_weights):
-        super().__init__()
-        self.class_weights = class_weights
-        self.weightedCEL = torch.nn.CrossEntropyLoss(weight=class_weights)
-        self.normalCEL = torch.nn.CrossEntropyLoss()
-
-    def forward(self, logits, target , epoch ):
-        if epoch % 2 == 0:
-            return self.normalCEL(logits, target)
-        else:
-            return self.weightedCEL(logits, target)
-
 
 
 def videoMAE_features(path  , clip_duration , speaker , check):
-    # TODO: DATASET SPECIFIC
     if clip_duration == None:
         beg = 0
         end = 500
@@ -122,8 +72,7 @@ def videoMAE_features(path  , clip_duration , speaker , check):
                         [
                             UniformTemporalSubsample(16),
                             Lambda(lambda x: x / 255.0),
-                            NormalizeVideo(mean, std),                            
-                            # TODO: DATASET SPECIFIC                            
+                            NormalizeVideo(mean, std),
                             RandomHorizontalFlip(p=0) if speaker == None else Crop((120,2,245,355)) if speaker else Crop((120,362,245,355)), # if not IEMOCAP then do nothing, else 
                             # Hone in on either the left_speaker or right_speaker in the video
                             RandomShortSideScale(min_size=256, max_size=320),
@@ -143,8 +92,7 @@ def videoMAE_features(path  , clip_duration , speaker , check):
                         [
                             UniformTemporalSubsample(num_frames_to_sample),
                             Lambda(lambda x: x / 255.0),
-                            Normalize(mean, std),                            
-                            # TODO: DATASET SPECIFIC                            
+                            Normalize(mean, std),
                             RandomHorizontalFlip(p=0) if speaker == None else Crop((120,2,245,355)) if speaker else Crop((120,362,245,355)),
                             Resize((resize_to, resize_to)),
                         ]
@@ -167,7 +115,7 @@ def speech_file_to_array_fn(path , target_sampling_rate = 16000):
     speech = resampler(speech_array).squeeze()
     return torch.mean(speech, dim=0) if len(speech.shape) > 1 else speech # over the channel dimension
 
-# TODO: DATASET SPECIFIC
+
 PROC = AutoProcessor.from_pretrained("audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim")
 
 def collate_batch(batch , check): # batch is a pseudo pandas array of two columns
@@ -196,8 +144,6 @@ def collate_batch(batch , check): # batch is a pseudo pandas array of two column
         speech_list.append(speech_file_to_array_fn(audio_path))
         
         vid_features = input[2]#[6:] for debug
-
-        # TODO: DATASET SPECIFIC
         video_list.append(videoMAE_features(vid_features['vid_path'] , vid_features['timings'] , vid_features['speaker'] , check))
         label_list.append(label)
     batch_size = len(label_list)
@@ -214,15 +160,10 @@ def collate_batch(batch , check): # batch is a pseudo pandas array of two column
         vid_mask.view(-1)[idx_to_change] = 1
     numpy_speech_list = [item.numpy() for item in speech_list] 
     # speech_list_input_values = torch.Tensor(np.array(PROC( numpy_speech_list , sampling_rate = 16000 , padding = True)['input_values']))
-
-
-    """ Audio works as intended as per test_audio_mask.ipynb"""
     speech_list_mask = torch.Tensor(np.array(PROC( numpy_speech_list, sampling_rate = 16000 , padding = True)['attention_mask']))
         
     speech_list_input_values = pad_sequence(speech_list , batch_first = True, padding_value=0)
     # speech_list_input_values = (speech_list_input_values1 + speech_list_input_values2)/2
-
-    # Batch_size , 16 , 224 , 224 
     
     
     
@@ -248,10 +189,6 @@ class PreFormer(nn.Module):
     def __init__(self):
         super(PreFormer, self).__init__()
         
-        self.bert = AutoModel.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
-
-        self.iter = 1
-
         self.wav2vec2 = AutoModel.from_pretrained("audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim")
         self.wav2vec2.feature_projection.projection.out_features = 768
         self.wav2vec2.encoder.pos_conv_embed.conv.in_channels = 768
@@ -261,7 +198,6 @@ class PreFormer(nn.Module):
         # self.wav2vec2.encoder.pos_conv_embed.padding = nn.Identity()
         # self.wav2vec2.encoder.layer_norm.normalized_shape = (768,)
         self.videomae = VideoMAEModel.from_pretrained("MCG-NJU/videomae-base")
-        
 
         self.wav_2_768 = nn.Linear(1024 , 768)
         self.wav_2_768.weight = torch.nn.init.xavier_normal_(self.wav_2_768.weight)
@@ -286,7 +222,7 @@ class PreFormer(nn.Module):
                 mask_prob=self.wav2vec2.config.mask_time_prob,
                 mask_length=self.wav2vec2.config.mask_time_length,
                 attention_mask=attention_mask,
-                min_masks=self.wav2vec2.config.mask_time_min_masks,#ERROR HERE
+                min_masks=self.wav2vec2.config.mask_time_min_masks,
             )
             mask_time_indices = torch.tensor(mask_time_indices, device=hidden_states.device, dtype=torch.bool)
             hidden_states[mask_time_indices] = self.masked_spec_embed.to(hidden_states.dtype)
@@ -341,78 +277,100 @@ class PreFormer(nn.Module):
         attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
         return attention_mask
 
-    def forward(self, input_ids = None , audio_features = None , video_embeds = None , text_mask = None , audio_mask = None , visual_mask = None, device = "cpu" , train = False):
+    def forward(self, audio_features , video_embeds , text_mask = None , audio_mask = None , visual_mask = None, device = "cpu" , train = False):
         
         self.wav2vec2 = self.wav2vec2.to(device)
         self.wav_2_768 = self.wav_2_768.to(device)
-        #Text Embeds
-        if input_ids is not None:
-            embedded_bert = self.bert.embeddings(input_ids = input_ids)
         #Audio Embeds
         # torch.cuda.empty_cache()
-        extract_features = self.wav2vec2.feature_extractor(audio_features.to(device))
+        extract_features = checkpoint(self.wav2vec2.feature_extractor,audio_features.to(device))
         if audio_mask is not None:
             audio_mask = self._get_feature_vector_attention_mask(extract_features.shape[2], audio_mask, add_adapter=False)
-        embedded_audio, extract_features = self.wav2vec2.feature_projection(extract_features.transpose(1, 2))
-        
+        embedded_audio, extract_features = checkpoint(self.wav2vec2.feature_projection,extract_features.transpose(1, 2))
+        del extract_features
         # Multiple CheckPointing like this produces an error if we are also trying to find unused params in Accelerate/DDP
         embedded_audio = self._mask_hidden_states(embedded_audio.to("cpu"), audio_mask, train).to(device)
-        embedded_audio = embedded_audio + self.wav2vec2.encoder.pos_conv_embed(embedded_audio)
-        embedded_audio = self.wav2vec2.encoder.layer_norm(embedded_audio)
-        embedded_audio = self.wav2vec2.encoder.dropout(embedded_audio)
+        embedded_audio = embedded_audio + checkpoint(self.wav2vec2.encoder.pos_conv_embed,embedded_audio)
+        embedded_audio = checkpoint(self.wav2vec2.encoder.layer_norm,embedded_audio)
+        embedded_audio = checkpoint(self.wav2vec2.encoder.dropout,embedded_audio)
         embedded_audio = self.wav_2_768(embedded_audio).to("cpu")
         # torch.cuda.empty_cache()
         #Video Embeds
-        embedded_video = self.videomae.embeddings(video_embeds , visual_mask) # this is a different visual mask then the one we input into the encoder 27 lines from here on if statement 
+        embedded_video = self.videomae.embeddings(video_embeds , visual_mask)
         #Combine Features Over Sequence Length
-        if input_ids is not None:
-            tav = torch.concat((embedded_bert , embedded_audio , embedded_video) , dim = 1)
-        else:
-            tav = torch.concat((embedded_audio , embedded_video) , dim = 1)
-
+        tav = torch.concat((embedded_audio , embedded_video) , dim = 1)
 
         #Create Static Embedding And Masks
-        #0's , Text
-        if input_ids is not None:
-            batch_size , seq_len , _ = embedded_bert.shape 
-            text_pos = torch.zeros((batch_size , seq_len ))            
-            if text_mask is not None:
-                text_mask = (1.0 - text_mask[:, None, None, :]) * torch.finfo(torch.float16).min
-            
 
         #1's , Audio
         batch_size , seq_len , _ = embedded_audio.shape
-        audio_pos = torch.ones((batch_size , seq_len ))             
+        audio_pos = torch.zeros((batch_size , seq_len ))             
         if audio_mask is not None:
-            audio_mask = 1.0 - audio_mask[:, None, None, :] * torch.finfo(torch.float16).min # float32 was causing underflow 
-        
+            audio_mask = 1.0 - audio_mask[:, None, None, :] * torch.finfo(audio_features.dtype).min
+        del embedded_audio
 
         #2's , Video
         batch_size , seq_len , _ = embedded_video.shape
-        visual_pos = torch.ones((batch_size , seq_len )) + 1         
+        visual_pos = torch.ones((batch_size , seq_len ))         
         if visual_mask is not None:
-            visual_mask = torch.zeros((batch_size , 1 , 1 , seq_len)).type(torch.float) # Thus everything gets attention as  torch.finfo(audio_features.dtype).min is the smallest we can get 
-        
+            visual_mask = torch.zeros((batch_size , 1 , 1 , seq_len)).type(torch.float)
+        del embedded_video
 
-
-        if input_ids is not None:
-            tav_embed = torch.concat((text_pos , audio_pos , visual_pos) , dim = 1).type(torch.LongTensor)
-        else:
-            tav_embed = torch.concat((audio_pos , visual_pos) , dim = 1).type(torch.LongTensor)
-
+        tav_embed = torch.concat((audio_pos , visual_pos) , dim = 1).type(torch.LongTensor)
         #Concatenate Masks
         attention_mask = None
         if text_mask is not None and audio_mask is not None and visual_mask is not None:
             attention_mask = torch.concat((text_mask , audio_mask , visual_mask),  dim = -1)
-        else:
-            attention_mask = torch.concat((audio_mask , visual_mask),  dim = -1)
-            if self.iter == 1:
-                print(f"we are here attention_mask shape is {attention_mask.shape} \naudio_mask shape is {audio_mask.shape} \nvisual_mask shape is {visual_mask.shape}" , flush = True)
-                self.iter += 1
-
 
         return tav, tav_embed , attention_mask
         
+
+class TAVFormer(nn.Module):
+    """
+    Modelfor Bert and VideoMAE classifier
+    """
+
+    def __init__(self, args):
+        super(TAVFormer, self).__init__()
+        self.output_dim = args['output_dim']
+        self.dropout = args['dropout']
+        self.early_div = args['early_div']
+        self.num_layers = args['num_layers']
+
+        self.embedding = nn.Embedding(3 , 768)
+        self.embedding.weight.requires_grad = False # Now the embedding is static
+
+        self.transformer = TransformerEncoder(768 ,  num_layers = self.num_layers , dropout = self.dropout  , early_div =  self.early_div).apply(self.randomize_model)
+
+        self.dropout = nn.Dropout(self.dropout)
+        self.fc_norm = nn.LayerNorm(768)
+        self.linear = nn.Linear(768, self.output_dim)
+
+
+    def randomize_model(self,model):
+        for module_ in model.named_modules(): 
+            if isinstance(module_[1],(torch.nn.Linear, torch.nn.Embedding)):
+                module_[1].weight = torch.nn.init.xavier_uniform_(module_[1].weight)
+            elif isinstance(module_[1], torch.nn.LayerNorm):
+                module_[1].bias.data.zero_()
+                module_[1].weight = torch.nn.init.constant_(nn.Parameter(torch.empty(768)) , 1)
+                # module_[1].weight.data.fill_(1.0)
+            if isinstance(module_[1], torch.nn.Linear) and module_[1].bias is not None:
+                module_[1].bias.data.zero_()
+        return model
+
+
+    def forward(self, hidden_states , pos_embed , attention_mask = None):
+        #Transformer
+        tav = checkpoint(self.transformer , hidden_states + self.embedding(pos_embed) , attention_mask)
+        del pos_embed
+        del attention_mask
+        #Classifier Head
+        tav = self.fc_norm(torch.mean(tav, dim=1))
+        tav = self.dropout(tav)
+        tav = self.linear(tav)
+        torch.cuda.empty_cache()
+        return tav # returns [batch_size,output_dim]
 
 class TAVForMAE(nn.Module):
     """
@@ -425,21 +383,16 @@ class TAVForMAE(nn.Module):
         self.dropout = args['dropout']
         self.learn_PosEmbeddings = args['learn_PosEmbeddings']
 
-        self.test_ctr = 1
-        self.train_ctr = 1
-
         self.embedding = nn.Embedding(3 , 768)
         self.embedding.weight.requires_grad = self.learn_PosEmbeddings # Now the embedding is static
 
+        self.random_mae = VideoMAEModel.from_pretrained("MCG-NJU/videomae-base").apply(self.randomize_model)
+
         self.bert = AutoModel.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
-        self.bert_norm = nn.LayerNorm(768)
 
-        self.random_mae_config = AutoConfig.from_pretrained("MCG-NJU/videomae-base")
-        self.random_mae_encoder = VideoMAEEncoder(self.random_mae_config).apply(self.randomize_model)
-        self.vid_norm = nn.LayerNorm(768)
-
-
+    
         self.dropout = nn.Dropout(self.dropout)
+        self.fc_norm = nn.LayerNorm(768)
         self.linear = nn.Linear(768*2, self.output_dim)
 
 
@@ -455,20 +408,71 @@ class TAVForMAE(nn.Module):
                 module_[1].bias.data.zero_()
         return model
     
-    def forward(self, input_ids , text_attention_mask , hidden_states, pos_embed , attention_mask , batch_size = 2 , check = "train"):
+    def forward(self, input_ids , hidden_states, pos_embed , attention_mask = None , batch_size = 2):
         av = hidden_states + self.embedding(pos_embed)
+        del hidden_states
+        del pos_embed
         #Transformer Time
-        _, t = self.bert(input_ids= input_ids, attention_mask=text_attention_mask,return_dict=False)
-        t = self.bert_norm(t) # 
-        av = self.random_mae_encoder(av , attention_mask)
-        av = self.vid_norm(torch.mean(av, dim=1)) # av[0] is the hidden state output
-        #Concatenate Outputs
+        av = self.random_mae.encoder(av)
+        av = self.fc_norm(torch.mean(av[0], dim=1)) # tav[0] is the hidden state output
+        _, t = self.bert(input_ids= input_ids, attention_mask=attention_mask,return_dict=False)
         tav = torch.cat([t,av],dim=1)
         #Classifier Head
-        if check == "train":
-            tav = self.dropout(tav)
+        tav = self.dropout(tav)
         tav = self.linear(tav)
         return tav # returns [batch_size,output_dim]
+class TAVForW2V2(nn.Module):
+    """
+    Modelfor Bert and VideoMAE classifier
+    """
 
+    def __init__(self, args):
+        super(TAVForW2V2, self).__init__()
+        self.output_dim = args['output_dim']
+        self.dropout = args['dropout']
+        self.learn_PosEmbeddings = args['learn_PosEmbeddings']
+
+        self.embedding = nn.Embedding(3 , 768)
+        self.embedding.weight.requires_grad = self.learn_PosEmbeddings # Now the embedding is static
+
+        self.random_wav2vec2 = AutoModel.from_pretrained("superb/wav2vec2-base-superb-er").apply(self.randomize_model)
+        # Just using their architecture since the other wav2vec2 one is about 1024 hidden size and this is 768
+        # Still randomizing the weights so dont worry about that 
+        self.dropout = nn.Dropout(self.dropout)
+        self.fc_norm = nn.LayerNorm(768)
+        self.linear = nn.Linear(768, self.output_dim)
+
+
+    def randomize_model(self,model):
+        for module_ in model.named_modules(): 
+            if isinstance(module_[1],(torch.nn.Linear, torch.nn.Embedding)):
+                module_[1].weight = torch.nn.init.xavier_uniform_(module_[1].weight)
+            elif isinstance(module_[1], torch.nn.LayerNorm):
+                module_[1].bias.data.zero_()
+                module_[1].weight = torch.nn.init.constant_(nn.Parameter(torch.empty(768)) , 1)
+                # module_[1].weight.data.fill_(1.0)
+            if isinstance(module_[1], torch.nn.Linear) and module_[1].bias is not None:
+                module_[1].bias.data.zero_()
+        return model
+    
+    def forward(self, hidden_states: torch.Tensor, pos_embed: torch.Tensor , attention_mask = None , batch_size = 2):
+        tav = hidden_states + self.embedding(pos_embed)
+        del hidden_states
+        del pos_embed
+        #Transformer Time
+        if batch_size >= 8:
+            # tav = checkpoint(self.random_mae.encoder,tav)
+            for layer in self.random_wav2vec2.encoder.layers:
+                tav = checkpoint(layer,tav)
+                tav = tav[0]
+        else:
+            for layer in self.random_wav2vec2.encoder.layers:
+                tav = layer(tav)
+                tav = tav[0]
+        #Classifier Head
+        tav = self.fc_norm(torch.mean(tav, dim=1)) # tav[0] is the hidden state output
+        tav = self.dropout(tav)
+        tav = self.linear(tav)
+        return tav # returns [batch_size,output_dim]
 
 

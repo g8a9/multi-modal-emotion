@@ -1,2 +1,2 @@
-CUDA_VISIBLE_DEVICES=0 wandb agent ddi/MAE_EncoderDiffLoss/nypzkofv --count 20 
-CUDA_VISIBLE_DEVICES=1 wandb agent ddi/MAE_EncoderDiffLoss/nypzkofv --count 20 
+CUDA_VISIBLE_DEVICES=0 wandb agent ddi/MAE_EncoderDiffLoss/36moqfga --count 20 
+CUDA_VISIBLE_DEVICES=1 wandb agent ddi/MAE_EncoderDiffLoss/36moqfga --count 20 

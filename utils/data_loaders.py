@@ -20,6 +20,10 @@ class TextAudioVideoDataset(Dataset):
         
         tokenizer = AutoTokenizer.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
 
+        self.grad = df['dialog'].value_counts().sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+
         self.labels = df[label_col].values.tolist()
 
         self.audio_path = df[feature_col1].values
@@ -39,9 +43,19 @@ class TextAudioVideoDataset(Dataset):
             self.speaker = df[speaker].values.tolist()
         except:
             self.speaker = [None]*len(self.labels)
+
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
         
-
-
     def __len__(self): return len(self.labels)
 
 

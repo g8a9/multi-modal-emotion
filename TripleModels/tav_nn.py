@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from .train_model.tav_train import train_tav_network, evaluate_tav
-from .models.tav import TAVForMAE , TAVFormer , TAVForW2V2 , collate_batch
+from .models.tav import PreFormer , TAVForMAE  , collate_batch , MySampler , NewCrossEntropyLoss
 import wandb
 
 from utils.data_loaders import TextAudioVideoDataset
@@ -27,7 +27,7 @@ class BatchCollation:
         return collate_batch(batch , self.check)
 
 
-def prepare_dataloader(df , batch_size, label_task , pin_memory=True, num_workers=8 , check = "train" ): # num_W = 8 kills it 
+def prepare_dataloader(df , batch_size, label_task , pin_memory=True, num_workers=4 , check = "train" ): # num_W = 8 kills it 
     """
     we load in our dataset, and we just make a random distributed sampler to evenly partition our 
     dataset on each GPU
@@ -35,9 +35,11 @@ def prepare_dataloader(df , batch_size, label_task , pin_memory=True, num_worker
     """
     if batch_size > 8:
         num_workers = 2
-    elif batch_size <= 8:
-        num_workers = 4
+  
+
     
+    # TODO: DATASET SPECIFIC
+    # df = df.head(350)
     dataset = TextAudioVideoDataset(df , max_len=70 , feature_col1="audio_path", feature_col2="video_path" , feature_col3="text" , label_col=label_task , timings="timings" , speaker="speaker")
     if check == "train":
         labels = df[label_task].value_counts()
@@ -45,9 +47,10 @@ def prepare_dataloader(df , batch_size, label_task , pin_memory=True, num_worker
 
         samples_weight = torch.tensor([1/class_counts[t] for t in dataset.labels])
         print(samples_weight, "\n\n" , len(samples_weight))
-        sampler = WeightedRandomSampler(list(samples_weight), len(samples_weight))
+        sampler = WeightedRandomSampler(list(samples_weight), int(1*len(samples_weight)))
+        # sampler = MySampler(list(samples_weight), len(samples_weight) , replacement=True , epoch=0)
         dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=pin_memory, 
-                num_workers=num_workers ,drop_last=False, shuffle=False , sampler=sampler,
+                num_workers=num_workers ,drop_last=False, shuffle=False, sampler = sampler,
                 collate_fn = BatchCollation(check))
     else:
         dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=pin_memory, 
@@ -80,40 +83,47 @@ def runModel( accelerator, df_train , df_val, df_test  ,param_dict , model_param
     num_labels = model_param['output_dim']
     
     if loss == "CrossEntropy":
-        # criterion = torch.nn.CrossEntropyLoss(weight=weights.to(device)).to(device)
+        # criterion = NewCrossEntropyLoss(class_weights=weights.to(device)).to(device) # TODO: have to call epoch in forward function
         criterion = torch.nn.CrossEntropyLoss().to(device)
-        print(loss , flush = True)
+       
+    elif loss == "NewCrossEntropy":
+        # criterion = PrecisionLoss(num_classes = num_labels,weights=weights.to(device)).to(device)
+        criterion = NewCrossEntropyLoss(class_weights = weights.to(device)).to(device)
     elif loss == "Precision":
         # criterion = PrecisionLoss(num_classes = num_labels,weights=weights.to(device)).to(device)
         criterion = PrecisionLoss(num_classes = num_labels).to(device)
+       
     elif loss == "FBeta":
         # criterion = FBetaLoss(num_classes = num_labels,weights=weights.to(device) , beta=beta ).to(device)
         criterion = FBetaLoss(num_classes = num_labels, beta=beta ).to(device)
 
+    print(loss , flush = True)
     Metric = Metrics(num_classes = num_labels, id2label = id2label , rank = device)
     df_train = prepare_dataloader(df_train,  batch_size ,  label_task , check = "train")
     df_val = prepare_dataloader(df_val,  batch_size ,  label_task , check = "val")
     df_test = prepare_dataloader(df_test ,  batch_size,  label_task , check = "val")
-    if model_name == "TAVFormer":
-        model = TAVFormer(model_param).to(device)
-    elif model_name == "MAE_encoder":
-        model = TAVForMAE(model_param).to(device)
-    elif model_name == "W2V2_encoder":
-        model = TAVForW2V2(model_param).to(device)
+    
+    model = TAVForMAE(model_param).to(device)
+  
+
+    PREFormer = PreFormer().to(f"cpu")
     
     
     wandb.watch(model, log = "all")
-    checkpoint = torch.load(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/MAEncoder/aht69be1/lively-sweep-11/7.pt")
-    model.load_state_dict(checkpoint['model_state_dict'])
-    criterion = checkpoint['loss']
+    wandb.watch(PREFormer, log = "all")
+    checkpoint = None#torch.load(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/MAEncoder/aht69be1/lively-sweep-11/7.pt")
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # criterion = checkpoint['loss']
+    # PREFormer = checkpoint['PREFormer']
 
-    model = train_tav_network(model, df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip , checkpoint )
-    evaluate_tav(model, df_test, Metric)
+    model , PREFormer= train_tav_network(model , PREFormer , df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip , checkpoint )
+    evaluate_tav(model , PREFormer , df_test, Metric)
     # cleanup()
 
 
 def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
     project_name = "MLP_test_text"
     args = arg_parse(project_name)
 
@@ -121,25 +131,24 @@ def main():
     config = wandb.config
     
     # config = args
-    np.random.seed(64)
-    torch.random.manual_seed(64)
+    np.random.seed(config.seed)
+    torch.random.manual_seed(config.seed)
     param_dict = {
         'epoch':config.epoch ,
         'patience':config.patience ,
-        'lr': config.learning_rate ,
+        'lr': config.learning_rate,
         'clip': config.clip ,
-        'batch_size':config.batch_size ,
+        'batch_size':1,#config.batch_size ,
         'weight_decay':config.weight_decay ,
         'model':config.model,
         'T_max':config.T_max ,
         'seed':config.seed,
         'label_task':config.label_task,
         'mask':config.mask,
-        'loss':config.loss,
+        'loss':"NewCrossEntropy",#config.loss,
         'beta':config.beta,
     }
-    param_dict = {'epoch': 11, 'patience': 10, 'lr': 4.574581905496542e-06, 'clip': 1, 'batch_size': 2, 'weight_decay': 1e-08, 'model': 'MAE_encoder', 'T_max': 2, 'seed': 64, 
-                  'label_task': 'emotion', 'mask': False, 'loss': 'CrossEntropy', 'beta': 1}
+
     
     df = pd.read_pickle(f"{args.dataset}.pkl")
     if param_dict['label_task'] == "sentiment":
@@ -149,13 +158,14 @@ def main():
         number_index = "emotion"
         label_index = "emotion_label"
 
+    # TODO: DATASET SPECIFIC
     if "IEMOCAP" in args.dataset:
         df_train = df[df['split'] == "train"]
         df_test = df[df['split'] == "test"]
         df_val = df[df['split'] == "val"]
     else:
         df = df[df["audio_shape"] > 10000] # Still seeing what the best configuration is for these
-        df = df[ (df['emotion_label'] != "fear")  & (df['emotion_label'] != "disgust")]
+        # df = df[ (df['emotion_label'] != "fear")  & (df['emotion_label'] != "disgust")]
         df_train = df[df['split'] == "train"] 
         df_test = df[df['split'] == "test"] 
         df_val = df[df['split'] == "val"] 
@@ -181,7 +191,6 @@ def main():
         'num_layers':config.num_layers,
         'learn_PosEmbeddings':config.learn_PosEmbeddings,
     }
-    model_param = {'output_dim': 5, 'dropout': 0.3, 'early_div': False, 'num_layers': 9, 'learn_PosEmbeddings': False}
     
     param_dict['weights'] = weights
     param_dict['label2id'] = label2id
@@ -195,6 +204,6 @@ if __name__ == '__main__':
     main()
 
 
-
-
+# [14, 7, 13, 9, 11, 3, 19, 2, 6, 14, 6, 9, 12, 4, 5, 22, 6, 10, 10, 1, 12, 13, 4, 8, 9, 14, 14, 2, 6, 13, 15, 4, 15, 11, 14, 5, 6, 2]
+# [14, 21, 34, 43, 54, 57, 76, 78, 84, 98, 104, 113, 125, 129, 134, 156, 162, 172, 182, 183, 195, 208, 212, 220, 229, 243, 257, 259, 265, 278, 293, 297, 312, 323, 337, 342, 348, 350]
 

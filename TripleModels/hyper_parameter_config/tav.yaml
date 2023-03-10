@@ -13,28 +13,27 @@ metric:
   name: val/loss
 parameters:
   epoch: 
-    values: [9 , 11]
+    values: [7]
   learning_rate:
-    distribution: uniform
-    min: 2.7443259830284023e-06
-    max: 0.00017973850532630305
+    values: [0.000001 , 0.0000001, 0.00000001 , 0.000000001] 
   batch_size:
-    values: [1 , 1 , 1 , 2 , 4]
+    values: [1 , 1  , 2 , 4]
   weight_decay:
     values: [0.0001 , 0.00001 , 0.000001 , 0.0000001, 0.00000001]  
   seed:
     values: [32, 64, 96]
   dropout:
-    values: [0 , 0.1 , 0.2 , 0.3]
+    values: [0.3 , 0.4 , 0.5 , 0.6]
   mask:
     values: [False]
   early_div:
-    values: [True,False]
+    values: [True]
   learn_PosEmbeddings:
     values: [True,False]
   num_layers:
-    values: [6,9,12]
+    values: [0]
   patience:
+    values: [10]
   clip:
     values: [1 , 5 , 10]
   T_max:
@@ -46,6 +45,6 @@ parameters:
   model:
     values: ['MAE_encoder']
   loss:
-    values: ['CrossEntropy']
+    values: ['NewCrossEntropy', 'CrossEntropy']
   beta:
-    values: [0.5 , 1]
+    values: [1]

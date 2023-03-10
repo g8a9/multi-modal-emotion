@@ -1,2 +1,2 @@
-CUDA_VISIBLE_DEVICES=0 wandb agent ddi/MAEncoder/aht69be1 --count 20 
-CUDA_VISIBLE_DEVICES=1 wandb agent ddi/MAEncoder/aht69be1 --count 20
+CUDA_VISIBLE_DEVICES=0 wandb agent ddi/MAEncoder_7Emo_Test/l6m0snkz --count 20 
+CUDA_VISIBLE_DEVICES=1 wandb agent ddi/MAEncoder_7Emo_Test/l6m0snkz --count 20

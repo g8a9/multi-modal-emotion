@@ -38,6 +38,7 @@ class Crop:
   def __call__(self , frames):
       a,b,c,d = self.params
       new_vid = torch.rand((3 , 16 , c , d))
+      #Now we are only focusing just the last two dimensions which are width and height of an image, thus we crop each frame in a video one by one
       for idx , frame in enumerate(frames):
           new_vid[idx] = F.crop(frame, *self.params)
       return new_vid
@@ -65,28 +66,32 @@ class PrecisionLoss(nn.Module):
         # Normalize thew weights
         if weights == None:
             weights = torch.ones(num_classes)
+            self.weights = weights / weights.sum()
+            self.weights = self.weights.to(f"cuda")
+        else:
         # Normalize thew weights
-        self.weights = weights / weights.sum()
+            self.weights = weights / weights.sum()
         self.epsilon = epsilon
         self.num_classes = num_classes
         self.softmax = nn.Softmax(dim=1)
-        self.fc_norm = nn.LayerNorm(self.num_classes)
         
     def forward(self, y_pred, y_true,):
         """
         preds first as logits, truth/target second and must be int64
         """
-        pred_sm = self.fc_norm(self.softmax(y_pred))
+        pred_sm = self.softmax(y_pred)
         y_pred = torch.argmax( pred_sm , dim = 1)
 
         y_true = Fnn.one_hot(y_true, self.num_classes).to(torch.float32)
         y_pred = Fnn.one_hot(y_pred, self.num_classes).to(torch.float32)
 
+
+
         cnf_matrix = y_true.T @ (pred_sm*y_pred)
+
         tp = torch.diag(cnf_matrix)
         fp = cnf_matrix.sum(axis=0) - tp 
         precision = tp / (tp + fp + self.epsilon)
-        
         return 1 - (precision*self.weights).sum()
 class FBetaLoss(nn.Module):
 
@@ -95,24 +100,29 @@ class FBetaLoss(nn.Module):
         # Normalize thew weights
         if weights == None:
             weights = torch.ones(num_classes)
-        self.weights = weights / weights.sum()
+            self.weights = weights / weights.sum()
+            self.weights = self.weights.to(f"cuda")
+        else:
+            self.weights = weights / weights.sum()
         self.epsilon = epsilon
         self.beta = beta
         self.num_classes = num_classes
         self.softmax = nn.Softmax(dim=1)
-        self.fc_norm = nn.LayerNorm(self.num_classes)
         
     def forward(self, y_pred, y_true,):
         """
         preds first as logits, truth/target second and must be int64
         """
-        pred_sm = self.fc_norm(self.softmax(y_pred))
+        pred_sm = self.softmax(y_pred)
         y_pred = torch.argmax( pred_sm , dim = 1)
 
         y_true = Fnn.one_hot(y_true, self.num_classes).to(torch.float32)
         y_pred = Fnn.one_hot(y_pred, self.num_classes).to(torch.float32)
 
+
+
         cnf_matrix = y_true.T @ (pred_sm*y_pred)
+
         tp = torch.diag(cnf_matrix)
         fp = cnf_matrix.sum(axis=0) - tp 
         precision = tp / (tp + fp + self.epsilon)
@@ -122,7 +132,6 @@ class FBetaLoss(nn.Module):
         # F0.5-Measure = (1.25 * Precision * Recall) / (0.25 * Precision + Recall)
         f1 = ((1+self.beta**2)*precision*recall) / (((self.beta**2)*precision) + recall + self.epsilon)
         f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
-        
         return 1 - (f1*self.weights).sum()
 
 class Metrics:
@@ -210,7 +219,7 @@ def hidden_layer_count(string):
         return list(map(int, x))
     raise ArgumentParser.ArgumentTypeError(f'Missing a dimension in hidden layers, Need to input an even amount of dimensions, that is greater then 1 : {string}')
 
-def save_model(model , optimizer , criterion , scheduler , epoch):
+def save_model(model , PREFormer , optimizer , criterion , scheduler , epoch):
     if epoch == 0:
         try:
             os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/")
@@ -231,6 +240,7 @@ def save_model(model , optimizer , criterion , scheduler , epoch):
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': criterion,
             'scheduler' : scheduler.state_dict(),
+            'PREFormer' : PREFormer.state_dict(),
             }, f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/{epoch}.pt")
     except:
         torch.save({
@@ -239,6 +249,7 @@ def save_model(model , optimizer , criterion , scheduler , epoch):
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': criterion,
             'scheduler' : scheduler.state_dict(),
+            'PREFormer' : PREFormer.state_dict(),
             }, f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/{epoch}.pt")
 
 
