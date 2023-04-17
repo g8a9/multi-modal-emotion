@@ -1,4 +1,4 @@
-program: ../text_nn.py
+program: ../tav_nn.py
 command:
   - ${env}
   - python3
@@ -10,12 +10,14 @@ method: bayes
 
 metric:
   goal: minimize
-  name: train/train_loss
+  name: val/loss
 parameters:
   epoch: 
     values: [6]
   learning_rate:
-    values: [0.0001 , 0.00001 , 0.000001 , 0.00005 , 0.000005]  
+    distribution: uniform
+    max: 1.0e-5
+    min: 5.0e-6
   batch_size:
     values: [1]
   weight_decay:
@@ -45,7 +47,7 @@ parameters:
   label_task:
     values: ['emotion']
   model:
-    values: ['BERT']
+    values: ['MAE_encoder']
   loss:
     values: ['NewCrossEntropy']
   beta:

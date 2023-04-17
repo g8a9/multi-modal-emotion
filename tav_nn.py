@@ -1,28 +1,43 @@
+import os
 import sys
 sys.path.insert(0,"/home/prsood/projects/def-whkchun/prsood/multi-modal-emotion/") 
-__package__ = 'SingleModels'
-import os
-from .train_model.text_training import train_text_network, evaluate_text
-from .models.text import BertClassifier
-import wandb
+__package__ = 'TripleModels'
+from transformers import logging
+logging.set_verbosity_error()
+import warnings
+warnings.filterwarnings("ignore")
 
-from utils.data_loaders import BertDataset
-from utils.global_functions import arg_parse 
+from .train_model.tav_train import train_tav_network, evaluate_tav
+from .models.tav import PreFormer , TAVForMAE  , collate_batch
+import wandb
+from utils.data_loaders import TextAudioVideoDataset
 import pandas as pd
 import torch
 import numpy as np
+from utils.global_functions import arg_parse , Metrics  , MySampler , NewCrossEntropyLoss
 from torch.utils.data import DataLoader
-from utils.global_functions import arg_parse , Metrics, MySampler , NewCrossEntropyLoss
+from torch.utils.data.sampler import WeightedRandomSampler
+class BatchCollation:
+    def __init__(self,  check  ) -> None:
+        self.check = check
+    
+    def __call__(self, batch):
+        return collate_batch(batch , self.check)
 
 
-def prepare_dataloader(df , batch_size, label_task , epoch_switch , pin_memory=True, num_workers=8 , check = "train" ): # num_W = 8 kills it 
+def prepare_dataloader(df , batch_size, label_task , epoch_switch , pin_memory=True, num_workers=2 , check = "train" ): # num_W = 8 kills it 
     """
     we load in our dataset, and we just make a random distributed sampler to evenly partition our 
     dataset on each GPU
     say we have 32 data points, if batch size = 8 then it will make 4 dataloaders of size 8 each 
-    """    
+    """
+    if batch_size > 8:
+        num_workers = 2
+  
+
+    
     # TODO: DATASET SPECIFIC
-    dataset = BertDataset(df , max_len=70 , feature_col="text" , label_col=label_task)
+    dataset = TextAudioVideoDataset(df , max_len=70 , feature_col1="audio_path", feature_col2="video_path" , feature_col3="text" , label_col=label_task , timings="timings" , speaker="speaker")
     if check == "train":
         labels = df[label_task].value_counts()
         class_counts = torch.Tensor(list(dict(sorted((dict((labels)).items()))).values())).to(int)
@@ -32,10 +47,12 @@ def prepare_dataloader(df , batch_size, label_task , epoch_switch , pin_memory=T
         # sampler = WeightedRandomSampler(list(samples_weight), int(1*len(samples_weight)))
         sampler = MySampler(list(samples_weight), len(samples_weight) , replacement=True , epoch=0 , epoch_switch = epoch_switch)
         dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=pin_memory, 
-                num_workers=num_workers ,drop_last=False, shuffle=False, sampler = sampler)
+                num_workers=num_workers ,drop_last=False, shuffle=False, sampler = sampler,
+                collate_fn = BatchCollation(check))
     else:
         dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=pin_memory, 
-                num_workers=num_workers ,drop_last=False, shuffle=False)
+                num_workers=num_workers ,drop_last=False, shuffle=False,
+                collate_fn = BatchCollation(check))
 
     return dataloader
 
@@ -77,14 +94,23 @@ def runModel( accelerator, df_train , df_val, df_test  ,param_dict , model_param
     df_train = prepare_dataloader(df_train,  batch_size ,  label_task , epoch_switch , check = "train")
     df_val = prepare_dataloader(df_val,  batch_size ,  label_task , epoch_switch , check = "val")
     df_test = prepare_dataloader(df_test ,  batch_size,  label_task , epoch_switch , check = "val")
-
     
-    model = BertClassifier(model_param).to(device)
+    model = TAVForMAE(model_param).to(device)
+  
 
-
+    PREFormer = PreFormer().to(f"cpu")
+    
+    
     wandb.watch(model, log = "all")
-    model = train_text_network(model, df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip )
-    evaluate_text(model, df_test, Metric)
+    wandb.watch(PREFormer, log = "all")
+    checkpoint = None#torch.load(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/MAEncoder/aht69be1/lively-sweep-11/7.pt")
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # criterion = checkpoint['loss']
+    # PREFormer = checkpoint['PREFormer']
+
+    model , PREFormer= train_tav_network(model , PREFormer , df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip , epoch_switch , checkpoint )
+    evaluate_tav(model , PREFormer , df_test, Metric)
+    # cleanup()
 
 
 def main():
@@ -161,10 +187,11 @@ def main():
     print(f" in main \n param_dict = {param_dict} \n model_param = {model_param} \n df {args.dataset} , with df = {len(df)} \n ")
     runModel("cuda" ,df_train , df_val , df_test ,param_dict , model_param  )
     
+    
 if __name__ == '__main__':
     main()
 
 
-
-
+# [14, 7, 13, 9, 11, 3, 19, 2, 6, 14, 6, 9, 12, 4, 5, 22, 6, 10, 10, 1, 12, 13, 4, 8, 9, 14, 14, 2, 6, 13, 15, 4, 15, 11, 14, 5, 6, 2]
+# [14, 21, 34, 43, 54, 57, 76, 78, 84, 98, 104, 113, 125, 129, 134, 156, 162, 172, 182, 183, 195, 208, 212, 220, 229, 243, 257, 259, 265, 278, 293, 297, 312, 323, 337, 342, 348, 350]
 

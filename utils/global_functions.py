@@ -10,10 +10,78 @@ import io
 import numpy as np
 from torchmetrics.classification import MulticlassF1Score , MulticlassRecall , MulticlassPrecision , MulticlassAccuracy , MulticlassConfusionMatrix 
 from torchvision.transforms import functional as F
-from torch import nn
-from torch.nn import functional as Fnn
 import wandb
 import os
+import collections
+from torch.optim import AdamW
+from torch.utils.data.sampler import Sampler
+from torch import nn
+
+
+class MySampler(Sampler):
+    
+    def __init__(self, weights, num_samples, replacement = True , epoch = 0 , epoch_switch = 2):
+        if not isinstance(num_samples, int) or isinstance(num_samples, bool) or num_samples <= 0:
+            raise ValueError("num_samples should be a positive integer "
+                             "value, but got num_samples={}".format(num_samples))
+        if not isinstance(replacement, bool):
+            raise ValueError("replacement should be a boolean value, but got "
+                             "replacement={}".format(replacement))
+        self.weights = torch.as_tensor(weights, dtype=torch.double)
+        self.num_samples = num_samples
+        self.replacement = replacement
+        self.epoch = epoch
+        self.epoch_switch = epoch_switch
+
+    def __iter__(self):
+        if self.epoch % self.epoch_switch == 0:
+            self.epoch += 1
+            print("we are in multinomial dataloader" , flush = True)
+            rand_tensor = torch.multinomial(self.weights, self.num_samples, self.replacement)
+            yield from iter(rand_tensor.tolist())
+        else:
+            print("we are in iterative dataloader" , flush = True)
+            # TODO: DATASET SPECIFIC
+            self.epoch += 1
+            yield from iter(range(self.num_samples))
+
+    def __len__(self) -> int:
+        return self.num_samples
+    
+class NewCrossEntropyLoss(nn.Module):
+    """
+    This criterion (`CrossEntropyLoss`) combines `LogSoftMax` and `NLLLoss` in one single class.
+    
+    NOTE: Computes per-element losses for a mini-batch (instead of the average loss over the entire mini-batch).
+    """
+    
+
+    def __init__(self, class_weights , epoch_switch = 2):
+        super().__init__()
+        self.class_weights = class_weights
+        self.epoch_switch = epoch_switch
+        self.weightedCEL = torch.nn.CrossEntropyLoss(weight=class_weights)
+        self.normalCEL = torch.nn.CrossEntropyLoss()
+        self.iter1 = 1
+        self.iter2 = 1
+        self.iter3 = 1
+
+    def forward(self, logits, target , epoch ):
+        if epoch % self.epoch_switch == 0:
+            if self.iter1 == 1:
+                print("We are in normal unweighted CEL" , flush = True)
+                self.iter1 += 1
+                self.iter2 = 1
+                self.iter3 = 1
+            return self.normalCEL(logits, target)
+        else:
+            if self.iter2 == 1 or self.iter3 == 1200:
+                print("We are in weighted CEL" , flush = True)
+                self.iter2 += 1
+                self.iter1 = 1
+            self.iter3 += 1
+            return self.weightedCEL(logits, target)
+
 
 def pool(input : np.array , mode : str) -> np.array:
     """
@@ -42,97 +110,6 @@ class Crop:
       for idx , frame in enumerate(frames):
           new_vid[idx] = F.crop(frame, *self.params)
       return new_vid
-
-class PrecisionLoss(nn.Module):
-    '''Calculate F1 score. Can work with gpu tensors
-  
-    The original implmentation is written by Michal Haltuf on Kaggle.
-    
-    Returns
-    -------
-    torch.Tensor
-        `ndim` == 1. epsilon <= val <= 1
-    
-    Reference
-    ---------
-    - https://www.kaggle.com/rejpalcz/best-loss-function-for-f1-score-metric
-    - https://scikit-learn.org/stable/modules/generated/sklearn.metrics.f1_score.html#sklearn.metrics.f1_score
-    - https://discuss.pytorch.org/t/calculating-precision-recall-and-f1-score-in-case-of-multi-label-classification/28265/6
-    - http://www.ryanzhang.info/python/writing-your-own-loss-function-module-for-pytorch/
-    '''
-
-    def __init__(self, num_classes = -1 , weights = None, epsilon=1e-7):
-        super().__init__()
-        # Normalize thew weights
-        if weights == None:
-            weights = torch.ones(num_classes)
-            self.weights = weights / weights.sum()
-            self.weights = self.weights.to(f"cuda")
-        else:
-        # Normalize thew weights
-            self.weights = weights / weights.sum()
-        self.epsilon = epsilon
-        self.num_classes = num_classes
-        self.softmax = nn.Softmax(dim=1)
-        
-    def forward(self, y_pred, y_true,):
-        """
-        preds first as logits, truth/target second and must be int64
-        """
-        pred_sm = self.softmax(y_pred)
-        y_pred = torch.argmax( pred_sm , dim = 1)
-
-        y_true = Fnn.one_hot(y_true, self.num_classes).to(torch.float32)
-        y_pred = Fnn.one_hot(y_pred, self.num_classes).to(torch.float32)
-
-
-
-        cnf_matrix = y_true.T @ (pred_sm*y_pred)
-
-        tp = torch.diag(cnf_matrix)
-        fp = cnf_matrix.sum(axis=0) - tp 
-        precision = tp / (tp + fp + self.epsilon)
-        return 1 - (precision*self.weights).sum()
-class FBetaLoss(nn.Module):
-
-    def __init__(self, num_classes = -1 , weights = None, beta = 1, epsilon=1e-7):
-        super().__init__()
-        # Normalize thew weights
-        if weights == None:
-            weights = torch.ones(num_classes)
-            self.weights = weights / weights.sum()
-            self.weights = self.weights.to(f"cuda")
-        else:
-            self.weights = weights / weights.sum()
-        self.epsilon = epsilon
-        self.beta = beta
-        self.num_classes = num_classes
-        self.softmax = nn.Softmax(dim=1)
-        
-    def forward(self, y_pred, y_true,):
-        """
-        preds first as logits, truth/target second and must be int64
-        """
-        pred_sm = self.softmax(y_pred)
-        y_pred = torch.argmax( pred_sm , dim = 1)
-
-        y_true = Fnn.one_hot(y_true, self.num_classes).to(torch.float32)
-        y_pred = Fnn.one_hot(y_pred, self.num_classes).to(torch.float32)
-
-
-
-        cnf_matrix = y_true.T @ (pred_sm*y_pred)
-
-        tp = torch.diag(cnf_matrix)
-        fp = cnf_matrix.sum(axis=0) - tp 
-        precision = tp / (tp + fp + self.epsilon)
-
-        fn = cnf_matrix.sum(axis=1) - tp
-        recall = tp / (tp + fn + self.epsilon)
-        # F0.5-Measure = (1.25 * Precision * Recall) / (0.25 * Precision + Recall)
-        f1 = ((1+self.beta**2)*precision*recall) / (((self.beta**2)*precision) + recall + self.epsilon)
-        f1 = f1.clamp(min=self.epsilon, max=1-self.epsilon)
-        return 1 - (f1*self.weights).sum()
 
 class Metrics:
     """
@@ -219,39 +196,66 @@ def hidden_layer_count(string):
         return list(map(int, x))
     raise ArgumentParser.ArgumentTypeError(f'Missing a dimension in hidden layers, Need to input an even amount of dimensions, that is greater then 1 : {string}')
 
-def save_model(model , PREFormer , optimizer , criterion , scheduler , epoch):
-    if epoch == 0:
+def save_model(model , PREFormer , optimizer , criterion , scheduler , epoch , step , path , log_val):
+    """
+    path: no trailing backslash
+    """
+    if epoch == 0 and step < log_val + 1:
         try:
-            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/")
+            os.makedirs(f"{path}/{wandb.run.project}/")
         except:
             pass            
         try:
-            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/")
+            os.makedirs(f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/")
         except:
             pass            
         try:
-            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/")
+            os.makedirs(f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/")
         except:
-            os.mkdir(f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/")
+            os.makedirs(f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/")
     try:
         torch.save({
             'epoch': epoch,
+            'step': step,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'loss': criterion,
+            'loss': criterion.state_dict(),
             'scheduler' : scheduler.state_dict(),
-            'PREFormer' : PREFormer.state_dict(),
-            }, f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/{epoch}.pt")
+            **({'PREFormer': PREFormer.state_dict()} if PREFormer is not None else {}),
+            }, f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/best.pt")
     except:
         torch.save({
             'epoch': epoch,
+            'step': step,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'loss': criterion,
+            'loss': criterion.state_dict(),
             'scheduler' : scheduler.state_dict(),
-            'PREFormer' : PREFormer.state_dict(),
-            }, f"/home/prsood/projects/ctb-whkchun/prsood/TAV_Train/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/{epoch}.pt")
+            **({'PREFormer': PREFormer.state_dict()} if PREFormer is not None else {}),
+            }, f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/best.pt")
 
+def load_model(model , PREFormer , optimizer , criterion , path):
+    """
+    path: no trailing backslash
+    """
+    p = ""
+    try:
+        checkpoint = torch.load(f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/best.pt")
+        p = f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/{wandb.run.name}/best.pt"
+    except:
+        checkpoint = torch.load(f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/best.pt")
+        p = f"{path}/{wandb.run.project}/{wandb.run.sweep_id}/copy_{wandb.run.name}/best.pt"
+
+    print(f"Current best model is on epoch {checkpoint['epoch']}, and step {checkpoint['step']} on path {p}" , flush = True)
+
+    model.load_state_dict(checkpoint['model_state_dict']) 
+    PREFormer.load_state_dict(checkpoint['PREFormer']) if PREFormer is not None else None
+    optimizer = AdamW([ param for param in model.parameters() if param.requires_grad == True] + [ param for param in PREFormer.parameters() if param.requires_grad == True])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict']) 
+    criterion.load_state_dict(checkpoint['loss'])
+
+        
+    return model , PREFormer , optimizer , criterion
 
 def arg_parse(description):
     """
@@ -261,24 +265,25 @@ def arg_parse(description):
     parser = ArgumentParser(description= f" Run experiments on {description} ")
 
     # parser.add_argument("--")
-    parser.add_argument("--learning_rate" , "-l" , help="Set the learning rate"  , default=0.001, type=float)
+    parser.add_argument("--learning_rate" , "-l" , help="Set the learning rate"  , default=0.000001, type=float)
     parser.add_argument("--epoch"  , "-e", help="Set the number of epochs"  , default=3, type = int)
-    parser.add_argument("--batch_size", "-b", help="Set the batch_size"  , default=16, type=int)
-    parser.add_argument("--weight_decay", "-w", help="Set the weight_decay" , default=0.000001, type=float)
+    parser.add_argument("--batch_size", "-b", help="Set the batch_size"  , default=1, type=int)
+    parser.add_argument("--weight_decay", "-w", help="Set the weight_decay" , default=0.0001, type=float)
     parser.add_argument("--clip", "-c", help="Set the gradient clip" , default=1.0, type=float)
+    parser.add_argument("--epoch_switch", "-es", help="Set the epoch to switch from iterative to weightedRandomSampler" , default=2, type=int)
     parser.add_argument("--patience", "-p", help="Set the patience" , default=10.0, type=float)
-    parser.add_argument("--T_max", "-t", help="Set the gradient T_max" , default=10, type=int)
+    parser.add_argument("--T_max", "-t", help="Set the gradient T_max" , default=2, type=int)
     parser.add_argument("--mask", "-ma", help="True/False on if we want to use masking in model" , default=False, type=bool)
-    parser.add_argument("--loss", "-ls", help="Which Loss function we are going to use" , default="CrossEntropy", type=str)
+    parser.add_argument("--loss", "-ls", help="Which Loss function we are going to use" , default="NewCrossEntropy", type=str)
     parser.add_argument("--beta", "-beta", help="For FBeta loss, what beta to pick" , default=1, type=float)
 
     # Set the seed
     parser.add_argument("--seed", "-s", help="Set the random seed" , default=32, type=int)
     
     # These are values in the yaml that we set
-    parser.add_argument("--dataset"  , "-d", help="The dataset we are using currently, or the folder the dataset is inside") 
-    parser.add_argument("--model"  , "-m", help="The model we are using currently") 
-    parser.add_argument("--label_task"  , "-lt", default='emotion' , help="What specific classification label we are using: Emotion or Sentiment") 
+    parser.add_argument("--dataset"  , "-d", help="The dataset we are using currently, or the folder the dataset is inside", default = "../data/text_audio_video_emotion_data") 
+    parser.add_argument("--model"  , "-m", help="The model we are using currently", default = "MAE_encoder") 
+    parser.add_argument("--label_task"  , "-lt", help="What specific classification label we are using: Emotion or Sentiment", default = 'emotion') 
 
     # These are args that we use as input to the model
     parser.add_argument("--input_dim", "-z", help="Set the input dimension", default=2 ,type=int)
@@ -286,7 +291,9 @@ def arg_parse(description):
     parser.add_argument("--lstm_layers"  , "-ll", help="set number of LSTM layers" , default=1  ,  type=int) 
     parser.add_argument("--hidden_layers"  , "-o", help="values corresponding to each hidden layer" , default="32,32" , type = str)
     parser.add_argument("--early_div"  , "-ed", help="If we should do division earlier in the transformer" , default=False , type = bool)
-    parser.add_argument("--dropout"  , "-dr", help="the rate for each dropout layer" , default=0.1 , type = float)
+    parser.add_argument("--dropout"  , "-dr", help="the rate for each dropout layer" , default=0.5 , type = float)
     parser.add_argument("--num_layers"  , "-nl", help="the number of layers in our transformers model" , default=12 , type = int)
-    parser.add_argument("--learn_PosEmbeddings"  , "-lpe", help="If we should learn our positional embeddings" , default=False , type = bool)
+    parser.add_argument("--learn_PosEmbeddings"  , "-lpe", help="If we should learn our positional embeddings" , default=True , type = bool)
     return parser.parse_args()
+
+     

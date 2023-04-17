@@ -42,20 +42,16 @@ class BertClassifier(nn.Module):
 
 	def __init__(self, args ,dropout=0.5):
 		super(BertClassifier, self).__init__()
-
+		self.dropout = args['dropout']
 		self.output_dim = args['output_dim']
 		
-		self.bert = BertModel.from_pretrained('bert-base-cased')
+		self.bert = BertModel.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
 
-		self.dropout = nn.Dropout(dropout)
+		self.dropout = nn.Dropout(self.dropout)
 
-		self.linear = nn.Linear(768, 300)
+		self.linear = nn.Linear(768, self.output_dim)
 
-		self.linear1 = nn.Linear(300, self.output_dim)
-
-		self.sigmoid = nn.Sigmoid()
-
-	def forward(self, input_id, mask):
+	def forward(self, input_id, mask , check):
 
 
 		# print(f"input_id = {input_id}\n input_id.shape = {input_id.shape}")
@@ -63,19 +59,14 @@ class BertClassifier(nn.Module):
 		_, pooled_output = self.bert(input_ids= input_id, attention_mask=mask,return_dict=False)
 		# print(f"pooled_output = {pooled_output}\n pooled_output.shape = {pooled_output.shape}")
 		
-		dropout_output = self.dropout(pooled_output)
+		if check == "train":
+			dropout_output = self.dropout(pooled_output)
 		# print(f"dropout_output = {dropout_output}\n dropout_output.shape = {dropout_output.shape}")
 		
 		linear_output = self.linear(dropout_output)
 		# print(f"linear_output = {linear_output}\n linear_output.shape = {linear_output.shape}")
 		
-		final_layer = self.sigmoid(linear_output)
-
-		x = self.dropout(final_layer)
-
-		x = self.linear1(x)
-
-		return x
+		return linear_output
 
 	# make sure all the params are stored in a massive matrix which will end up being 
 	# a complicated hell to make sure we get the params on every model type 
