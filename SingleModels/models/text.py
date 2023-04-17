@@ -56,17 +56,17 @@ class BertClassifier(nn.Module):
 
 		# print(f"input_id = {input_id}\n input_id.shape = {input_id.shape}")
 		
-		_, pooled_output = self.bert(input_ids= input_id, attention_mask=mask,return_dict=False)
+		_, x = self.bert(input_ids= input_id, attention_mask=mask,return_dict=False)
 		# print(f"pooled_output = {pooled_output}\n pooled_output.shape = {pooled_output.shape}")
 		
 		if check == "train":
-			dropout_output = self.dropout(pooled_output)
+			x = self.dropout(x)
 		# print(f"dropout_output = {dropout_output}\n dropout_output.shape = {dropout_output.shape}")
 		
-		linear_output = self.linear(dropout_output)
+		x = self.linear(x)
 		# print(f"linear_output = {linear_output}\n linear_output.shape = {linear_output.shape}")
 		
-		return linear_output
+		return x
 
 	# make sure all the params are stored in a massive matrix which will end up being 
 	# a complicated hell to make sure we get the params on every model type 
