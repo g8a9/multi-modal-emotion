@@ -83,7 +83,7 @@ def runModel( accelerator, df_train , df_val, df_test  ,param_dict , model_param
 
 
     wandb.watch(model, log = "all")
-    model = train_text_network(model, df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip )
+    model = train_text_network(model, df_train, df_val, criterion , lr, epoch ,  weight_decay,T_max, Metric , patience , clip , epoch_switch )
     evaluate_text(model, df_test, Metric)
 
 
