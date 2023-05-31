@@ -1,0 +1,39 @@
+program: ../audio_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/emotion_audio_text"
+  - "--model"
+  - "TransformersWav2Vec2"
+
+method: bayes
+
+metric:
+  goal: minimize
+  name: train/train_loss
+parameters:
+  epoch: 
+    values: [3 , 5 , 7]
+  learning_rate:
+    distribution: uniform
+    min: 0.001
+    max: 0.1
+  batch_size:
+    values: [2,4,8]
+  weight_decay:
+    values: [0.000001 , 0.0000001, 0.0000001]  
+  seed:
+    values: [32, 64, 96]
+  patience:
+    values: [10]
+  clip:
+    values: [1]
+  T_max:
+   values: [5,10]
+  output_dim:
+    values: [7]
+  hidden_layers:
+    values: ["300"]
+  

@@ -1,0 +1,52 @@
+program: ../visual_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/text_audio_video_emotion_data"
+
+method: bayes
+
+metric:
+  goal: minimize
+  name: val/loss
+parameters:
+  epoch: 
+    values: [6]
+  learning_rate:
+    values: [0.0001 , 0.00001 , 0.000001 , 0.00005 , 0.000005]  
+  batch_size:
+    values: [1]
+  weight_decay:
+    values: [0.0001 , 0.00001 , 0.000001]  
+  seed:
+    values: [32, 64, 96]
+  dropout:
+    values: [0.4 , 0.5]
+  mask:
+    values: [False]
+  early_div:
+    values: [True]
+  learn_PosEmbeddings:
+    values: [True,False]
+  num_layers:
+    values: [6,9]
+  patience:
+    values: [7]
+  clip:
+    values: [.25 , 1 , 5]
+  epoch_switch:
+    values: [2 , 3]
+  T_max:
+   values: [2,3]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['emotion']
+  model:
+    values: ['VisualClassification']
+  loss:
+    values: ['NewCrossEntropy']
+  beta:
+    values: [1]

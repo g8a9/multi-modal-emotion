@@ -1,0 +1,56 @@
+program: ../tav_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/TAV_all_datapoints"
+
+method: bayes
+
+metric:
+  goal: maximize
+  name: val/weighted-f1-score
+parameters:
+  epoch: 
+    values: [6]
+  learning_rate:
+    distribution: uniform
+    max: 9e-5
+    min: 7e-6
+  batch_size:
+    values: [1 , 2]
+  weight_decay:
+    distribution: uniform
+    max: 5e-3
+    min: 5e-4
+  seed:
+    values: [32, 64, 96]
+  dropout:
+    values: [0.1 , 0.2 , 0.3 , 0.4 , 0.5 , 0.6]
+  mask:
+    values: [False]
+  early_div:
+    values: [True]
+  learn_PosEmbeddings:
+    values: [True,False]
+  num_layers:
+    values: [12]
+  patience:
+    values: [10]
+  clip:
+    values: [1 , 5]
+  epoch_switch:
+    values: [2 , 3]
+  T_max:
+   values: [2 , 3]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['emotion']
+  model:
+    values: ['MAE_encoder']
+  loss:
+    values: ['NewCrossEntropy']
+  beta:
+    values: [1]

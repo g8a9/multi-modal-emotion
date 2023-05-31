@@ -1,0 +1,77 @@
+https://github.com/opencv/opencv-python/tree/72
+
+
+Step 1:
+    git clone --recursive https://github.com/opencv/opencv-python.git
+Step 2:
+    cd opencv-python
+Step 3:
+    git checkout $STABLE_VERSION
+    What happens here is that, you might run into a PEP 440 error here if you do the latest build
+Step 4:
+    export CMAKE_ARGS="-DOPENCV_EXTRA_MODULES_PATH=/home/prsood/projects/def-whkchun/prsood/opencv-python/opencv_contrib/modules  \
+        -DCMAKE_INSTALL_PREFIX=/home/prsood/projects/def-whkchun/prsood/cv2 \
+        -DWITH_LAPACK=OFF \ This one is crucial to avoid the intel symbol undefined/not found
+        -DENABLE_FAST_MATH=1 \
+        -DCUDA_FAST_MATH=1 \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_PERF_TESTS=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DWITH_OPENEXR=OFF \
+        -DWITH_CUDA=ON \
+        -DWITH_CUBLAS=ON \
+        -DWITH_CUDNN=ON \
+        -DOPENCV_DNN_CUDA=ON \
+        -DCUDA_GENERATION=Volta \
+        -DENABLE_PRECOMPILED_HEADERS=OFF \
+        /home/prsood/projects/def-whkchun/prsood/opencv-python"
+    
+    Lets go line by line here, so everyone understands what we are doing.
+    First we want to point to the modules folder inside of opencv_contrib, this way we are able to get the extra modules that openCV provides
+    Second we want to remove that line, as that will give us a short error just telling us to remove it, since we are going to be using "pip wheel ." it will automatically fill that value in for us
+    Thirdly we want to remove LAPACK, LAPACK is some library that connects with Intels version of GCC, and ive noticed that by removing this flag, we end up with import errors from the imlk library. So turn it off as it dosent make your GPU slower
+
+
+
+# # export CMAKE_ARGS="-DCUDA_GENERATION=Volta"
+
+# # git clone https://github.com/opencv/opencv_contrib
+
+# # cd opencv
+# # mkdir build ; cd build
+
+ cmake -DOPENCV_EXTRA_MODULES_PATH=/home/prsood/projects/def-whkchun/prsood/opencv-python/opencv_contrib/modules  \
+        -DCMAKE_INSTALL_PREFIX=/home/prsood/projects/def-whkchun/prsood/cv2 \
+        -DWITH_LAPACK=OFF \ This one is crucial to avoid the intel symbol undefined/not found
+        -DENABLE_FAST_MATH=1 \
+        -DCUDA_FAST_MATH=1 \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_PERF_TESTS=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DWITH_OPENEXR=OFF \
+        -DWITH_CUDA=ON \
+        -DWITH_CUBLAS=ON \
+        -DWITH_CUDNN=ON \
+        -DOPENCV_DNN_CUDA=ON \
+        -DCUDA_GENERATION=Volta \
+        -DENABLE_PRECOMPILED_HEADERS=OFF \
+        /home/prsood/projects/def-whkchun/prsood/opencv-python
+
+
+# #  cmake -D CMAKE_BUILD_TYPE=RELEASE -D CMAKE_INSTALL_PREFIX=/usr/local \
+# # -D WITH_CUDA=ON -D CUDA_ARCH_BIN=<compute capability> \
+# # -D CUDA_ARCH_PTX=<compute capability> -D ENABLE_FAST_MATH=1 \
+# # -D CUDA_FAST_MATH=1 -D WITH_CUBLAS=1 -D INSTALL_PYTHON_EXAMPLES=ON \
+# # -D OPENCV_EXTRA_MODULES_PATH=<path to opencv_contrib>/modules <path to OpenCV source>
+
+
+# # make -j1
+
+
+# "-DOPENCV_EXTRA_MODULES_PATH=/home/prsood/projects/def-whkchun/prsood/opencv-python/opencv_contrib/modules  -DENABLE_FAST_MATH=1  -DCUDA_FAST_MATH=1  -DBUILD_SHARED_LIBS=OFF  -DBUILD_TESTS=OFF  -DBUILD_PERF_TESTS=OFF  -DBUILD_EXAMPLES=OFF  -DWITH_OPENEXR=OFF  -DWITH_CUDA=ON  -DWITH_CUBLAS=ON  -DWITH_CUDNN=ON  -DOPENCV_DNN_CUDA=ON  -DCUDA_GENERATION=Volta  -DENABLE_PRECOMPILED_HEADERS=OFF  /home/prsood/projects/def-whkchun/prsood/opencv-python"
+
+
+
+# export LD_PRELOAD="/cvmfs/soft.computecanada.ca/easybuild/software/2020/Core/imkl/2020.1.217/mkl/lib/intel64/libmkl_core.so"

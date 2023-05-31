@@ -1,0 +1,5 @@
+train    621
+test     179
+val       75
+
+This is number of timings that are too small to be processed if we do the smart timing. so we must do the whole video on these ones
