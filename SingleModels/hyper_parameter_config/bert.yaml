@@ -1,0 +1,131 @@
+program: ../text_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/TAV_all_datapoints"
+
+method: bayes
+
+metric:
+  goal: maximize
+  name: val/weighted-f1-score
+parameters:
+  epoch:
+    max: 12
+    min: 6
+    distribution: int_uniform
+  learning_rate:
+    max: 1e-4
+    min: 5e-6
+    distribution: uniform
+  batch_size:
+    values: [8 , 16 , 32 , 64 , 128]
+  weight_decay:
+    max: 0.09309855642934205
+    min: 0.0005829245121082495
+  seed:
+    max: 192
+    min: 16
+    distribution: int_uniform
+  dropout:
+    max: 0.70
+    min: 0.35
+    distribution: uniform
+  mask:
+    values: [False]
+  early_div:
+    values: [True]
+  learn_PosEmbeddings:
+    values: [True,False]
+  num_layers:
+    values: [12]
+  patience:
+    max: 15
+    min: 10
+    distribution: int_uniform
+  clip:
+    max: 10
+    min: 4
+    distribution: int_uniform
+  epoch_switch:
+    values: [2 , 3]
+  T_max:
+   values: [2 , 3]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['emotion']
+  model:
+    values: ['MAE_encoder']
+  loss:
+    values: ['NewCrossEntropy']
+  beta:
+    values: [1]
+
+program: ../text_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/TAV_all_datapoints"
+
+method: bayes
+
+metric:
+  goal: maximize
+  name: val/weighted-f1-score
+parameters:
+  epoch:
+    max: 12
+    min: 6
+    distribution: int_uniform
+  learning_rate:
+    max: 1e-4
+    min: 5e-6
+    distribution: uniform
+  batch_size:
+    values: [8 , 16 , 32 , 64 , 128]
+  weight_decay:
+    max: 0.09309855642934205
+    min: 0.0005829245121082495
+  seed:
+    max: 192
+    min: 16
+    distribution: int_uniform
+  dropout:
+    max: 0.70
+    min: 0.35
+    distribution: uniform
+  mask:
+    values: [False]
+  early_div:
+    values: [True]
+  learn_PosEmbeddings:
+    values: [True,False]
+  num_layers:
+    values: [12]
+  patience:
+    max: 15
+    min: 10
+    distribution: int_uniform
+  clip:
+    max: 10
+    min: 4
+    distribution: int_uniform
+  epoch_switch:
+    values: [2 , 3]
+  T_max:
+   values: [2 , 3]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['emotion']
+  model:
+    values: ['MAE_encoder']
+  loss:
+    values: ['NewCrossEntropy']
+  beta:
+    values: [1]

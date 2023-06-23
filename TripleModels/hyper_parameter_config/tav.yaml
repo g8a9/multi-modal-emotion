@@ -1,0 +1,152 @@
+program: ../tav_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/TAV_all_datapoints"
+method: bayes
+
+metric:
+  goal: maximize
+  name: val/weighted-f1-score
+parameters:
+  epoch: 
+    values: [6]
+  learning_rate:
+    distribution: uniform
+    max: 9e-6
+    min: 2e-6
+  batch_size:
+    values: [1 , 2 , 4 , 8]
+  weight_decay:
+    distribution: uniform
+    max: 5e-3
+    min: 5e-4
+  seed:
+    values: [32, 64, 96]
+  dropout:
+    values: [ 0.3 , 0.4 , 0.5 ]
+  mask:
+    values: [False]
+  early_div:
+    values: [True]
+  learn_PosEmbeddings:
+    values: [True,False]
+  num_layers:
+    values: [12]
+  patience:
+    values: [10]
+  clip:
+    values: [1 , 5]
+  epoch_switch:
+    values: [2 , 3]
+  T_max:
+   values: [2 , 3]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['emotion']
+  model:
+    values: ['MAE_encoder']
+  loss:
+    values: ['NewCrossEntropy']
+  beta:
+    values: [1]
+
+
+program: ../tav_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/TAV_all_datapoints"
+method: bayes
+metric:
+  goal: maximize
+  name: val/weighted-f1-score
+parameters:
+  learn_PosEmbeddings:
+    values:
+      [True,False]
+    distribution: categorical
+  learning_rate:
+    max: 1e-5
+    min: 7e-6
+    distribution: uniform
+  hidden_layers:
+    values:
+      ["300"]
+    distribution: categorical
+  weight_decay:
+    max: 0.09309855642934205
+    min: 0.0005829245121082495
+    distribution: uniform
+  epoch_switch:
+    max: 3
+    min: 2
+    distribution: int_uniform
+  lstm_layers:
+    values:
+      [1]
+  output_dim:
+    values:
+      [7]
+  num_layers:
+    values:
+      [12]
+  label_task:
+    values:
+      ["emotion"]
+    distribution: categorical
+  batch_size:
+    max: 6
+    min: 1
+    distribution: int_uniform
+  input_dim:
+    values:
+      [2]
+  early_div:
+    values:
+      [True,False]
+    distribution: categorical
+  patience:
+    max: 15
+    min: 10
+    distribution: int_uniform
+  dropout:
+    max: 0.70
+    min: 0.35
+    distribution: uniform
+  model:
+    values:
+      ["MAE_encoder"]
+    distribution: categorical
+  epoch:
+    max: 12
+    min: 6
+    distribution: int_uniform
+  T_max:
+    max: 3
+    min: 2
+    distribution: int_uniform
+  seed:
+    max: 192
+    min: 16
+    distribution: int_uniform
+  mask:
+    values:
+      [True,False]
+    distribution: categorical
+  loss:
+    values:
+      ["NewCrossEntropy"]
+    distribution: categorical
+  clip:
+    max: 10
+    min: 1
+    distribution: int_uniform
+  beta:
+    values:
+      [1]

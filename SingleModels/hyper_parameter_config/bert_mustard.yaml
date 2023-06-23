@@ -1,0 +1,54 @@
+program: ../text_nn.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--dataset"
+  - "../../data/MustardTextTimings"
+
+method: bayes
+
+metric:
+  goal: maximize
+  name: val/weighted-f1-score
+parameters:
+  epoch: 
+    values: [6]
+  learning_rate:
+    values: [0.0001 , 0.00001 , 0.000001 , 0.00005 , 0.000005]  
+  batch_size:
+    values: [4 , 8 , 16 , 32]
+  weight_decay:
+    values: [0.0001 , 0.00005 , 0.00001 , 0.000001]  
+  seed:
+    max: 99
+    min: 1
+    distribution: int_uniform
+  dropout:
+    values: [ 0.3 , 0.4 , 0.5 ]
+  mask:
+    values: [False]
+  early_div:
+    values: [True]
+  learn_PosEmbeddings:
+    values: [True,False]
+  num_layers:
+    values: [12]
+  patience:
+    values: [10]
+  clip:
+    values: [1 , 5]
+  epoch_switch:
+    values: [2 , 3]
+  T_max:
+   values: [2 , 3]
+  hidden_layers:
+    values: ["300"]
+  label_task:
+    values: ['sarcasm']
+  model:
+    values: ['RoBERTa']
+  loss:
+    values: ['NewCrossEntropy']
+  beta:
+    values: [1]

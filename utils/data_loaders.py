@@ -1,0 +1,389 @@
+import warnings
+warnings.filterwarnings("ignore") 
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+from transformers import BertTokenizer , AutoTokenizer
+
+
+#------------------------------------------------------------TRIPLE MODELS BELOW--------------------------------------------------------------------
+class TextAudioVideoDataset(Dataset):
+    """
+    feature_col1 : audio paths 
+    feature_col2 : video paths 
+    feature_col3 : text
+    """
+
+    def __init__(self, df , dataset  , batch_size , max_len , feature_col1 , feature_col2 , feature_col3  , label_col , timings = None , speaker = None):
+        if "MELD" in dataset:
+            max_len=int(70*2.5)
+        elif "IEMOCAP" in dataset:
+            max_len=int(70*2.5)
+        else:
+            max_len = 300
+
+        
+
+        tokenizer = AutoTokenizer.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
+
+        self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+
+        self.labels = df[label_col].values.tolist()
+
+        self.audio_path = df[feature_col1].values
+        self.video_path = df[feature_col2].values
+
+
+        self.texts = [tokenizer(text, 
+                               padding='max_length', max_length = max_len, truncation=True,
+                                return_tensors="pt") for text in df[feature_col3]]
+
+        if timings != None:
+            self.timings = df[timings].values.tolist()
+        else:
+            self.timings = [None]*len(self.labels)
+        
+        try: # if speaker is in there, then we are doing IEMOCAP otherwise it will fail and go onto MELD
+            self.speaker = df[speaker].values.tolist()
+        except:
+            self.speaker = [None]*len(self.labels)
+
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+        
+    def __len__(self): return len(self.labels)
+
+
+    def __getitem__(self, idx): 
+        # d = {"text" : , "video_path" : self.video_path[idx] , "labels" : np.array(self.labels[idx])}
+        
+        return [self.texts[idx] , self.audio_path[idx] , {"vid_path" : self.video_path[idx] , "timings":self.timings[idx] , "speaker" :self.speaker[idx]}] , np.array(self.labels[idx])
+
+#------------------------------------------------------------DOUBLE MODELS BELOW--------------------------------------------------------------------
+
+class AudioVideoDataset(Dataset):
+    """
+    feature_col1 : audio paths 
+    feature_col2 : video paths 
+    """
+
+    def __init__(self, df  , batch_size , feature_col1 , feature_col2  , label_col , timings = None , speaker = None):
+        
+
+        self.labels = df[label_col].values.tolist()
+
+        self.audio_path = df[feature_col1].values
+        self.video_path = df[feature_col2].values
+
+
+        if timings != None:
+            self.timings = df[timings].values.tolist()
+        else:
+            self.timings = [None]*len(self.labels)
+        
+        try: # if speaker is in there, then we are doing IEMOCAP otherwise it will fail and go onto MELD
+            self.speaker = df[speaker].values.tolist()
+        except:
+            self.speaker = [None]*len(self.labels)
+        
+        self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+    
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+
+    def __len__(self): return len(self.labels)
+
+
+    def __getitem__(self, idx): 
+        # d = {"text" : , "video_path" : self.video_path[idx] , "labels" : np.array(self.labels[idx])}
+        
+        return [self.audio_path[idx] , {"vid_path" : self.video_path[idx] , "timings":self.timings[idx] , "speaker" :self.speaker[idx]}] , np.array(self.labels[idx])
+
+class TextAudioDataset(Dataset):
+    """
+    feature_col1 : audio paths 
+    feature_col2 : text
+    """
+
+    def __init__(self, df , dataset , batch_size , max_len , feature_col1 , feature_col2  , label_col , timings = None , speaker = None):
+        if "MELD" in dataset:
+            max_len=int(70*2.5)
+        elif "IEMOCAP" in dataset:
+            max_len=int(70*2.5)
+        else:
+            max_len = 300
+
+        
+
+        tokenizer = AutoTokenizer.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
+
+        self.labels = df[label_col].values.tolist()
+
+        self.audio_path = df[feature_col1].values
+
+
+        self.texts = [tokenizer(text, 
+                               padding='max_length', max_length = max_len, truncation=True,
+                                return_tensors="pt") for text in df[feature_col2]]
+        
+        self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+    
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+
+    def __len__(self): return len(self.labels)
+
+
+    def __getitem__(self, idx): 
+        # d = {"text" : , "video_path" : self.video_path[idx] , "labels" : np.array(self.labels[idx])}
+        
+        return [self.texts[idx] , self.audio_path[idx]] , np.array(self.labels[idx])
+
+class TextVideoDataset(Dataset):
+    """
+    feature_col1 : video paths 
+    feature_col2 : text
+    """
+
+    def __init__(self, df , dataset  , batch_size, max_len , feature_col1 , feature_col2  , label_col , timings = None , speaker = None):
+        if "MELD" in dataset:
+            max_len=int(70*2.5)
+        elif "IEMOCAP" in dataset:
+            max_len=int(70*2.5)
+        else:
+            max_len = 300
+
+        
+
+        tokenizer = AutoTokenizer.from_pretrained('j-hartmann/emotion-english-distilroberta-base')
+
+        self.labels = df[label_col].values.tolist()
+        self.video_path = df[feature_col1].values
+
+
+        self.texts = [tokenizer(text, 
+                               padding='max_length', max_length = max_len, truncation=True,
+                                return_tensors="pt") for text in df[feature_col2]]
+
+        if timings != None:
+            self.timings = df[timings].values.tolist()
+        else:
+            self.timings = [None]*len(self.labels)
+        
+        try: # if speaker is in there, then we are doing IEMOCAP otherwise it will fail and go onto MELD
+            self.speaker = df[speaker].values.tolist()
+        except:
+            self.speaker = [None]*len(self.labels)
+        
+        self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+    
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+
+    def __len__(self): return len(self.labels)
+
+
+    def __getitem__(self, idx): 
+        # d = {"text" : , "video_path" : self.video_path[idx] , "labels" : np.array(self.labels[idx])}
+        
+        return [self.texts[idx] , {"vid_path" : self.video_path[idx] , "timings":self.timings[idx] , "speaker" :self.speaker[idx]}] , np.array(self.labels[idx])
+
+#------------------------------------------------------------SINGLE MODELS BELOW--------------------------------------------------------------------
+
+
+class VisualDataset(Dataset):
+    """A basic dataset where the underlying data is a list of (x,y) tuples. Data
+    returned from the dataset should be a (transform(x), y) tuple.
+    Args:
+    source      -- a list of (x,y) data samples
+    transform   -- a torchvision.transforms transform
+    """
+    def __init__(self, df , dataset , batch_size , feature_col , label_col ,  timings = None , speaker = None):
+        self.video_path = df[feature_col].values
+        self.labels = df[label_col].values.tolist()
+
+        self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+        
+        if timings != None:
+            self.timings = df[timings].values.tolist()
+        else:
+            self.timings = [None]*len(self.labels)
+        
+        try: # if speaker is in there, then we are doing IEMOCAP otherwise it will fail and go onto MELD
+            self.speaker = df[speaker].values.tolist()
+        except:
+            self.speaker = [None]*len(self.labels)
+        
+    
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+
+    def __len__(self): return len(self.labels)
+    
+    def __getitem__(self, idx): return  {"vid_path" : self.video_path[idx] , "timings":self.timings[idx] , "speaker" :self.speaker[idx]} , np.array(self.labels[idx])
+
+class ImageDataset(Dataset):
+    """A basic dataset where the underlying data is a list of (x,y) tuples. Data
+    returned from the dataset should be a (transform(x), y) tuple.
+    Args:
+    source      -- a list of (x,y) data samples
+    transform   -- a torchvision.transforms transform
+    """
+    def __init__(self, df , dataset , feature_col , label_col):
+
+        
+        self.img_path = df[feature_col].values
+        self.labels = df[label_col].values.tolist()
+        
+
+    def __len__(self): return len(self.labels)
+    
+    def __getitem__(self, idx): return self.img_path[idx] , np.array(self.labels[idx])
+
+class Wav2VecAudioDataset(Dataset):
+    def __init__(self, df  , batch_size , feature_col , label_col):
+        """
+        Initialize the dataset loader.
+
+        :data: The dataset to be loaded.
+        :labels: The labels for the dataset."""
+
+        self.labels = df[label_col].values 
+        # Want a tensor of all the features d
+        self.audio_features = df[feature_col].values
+
+
+        
+        self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+        self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+        self.ctr = 0
+    
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+
+    def __getitem__(self, idx: int): return self.audio_features[idx], np.array(self.labels[idx])
+
+    def __len__(self): return len(self.labels)
+    
+
+class BertDataset(Dataset):
+    """
+    Load text dataset for BERT processing.
+    """
+
+    def __init__(self, df , dataset, batch_size , feature_col , label_col , accum = False):
+        if "MELD" in dataset:
+            max_len=int(70*2.5)
+        elif "IEMOCAP" in dataset:
+            max_len=int(70*2.5)
+        else:
+            max_len = 300
+
+        
+        tokenizer = AutoTokenizer.from_pretrained('jkhan447/sarcasm-detection-RoBerta-base-CR')
+        self.texts = []
+        #TODO: ERROR HERE?
+        for i in range(0, len(df[feature_col]), 2):
+            # concatenate the text
+            text = df[feature_col].iloc[i] + ' ' + df[feature_col].iloc[i+1]
+            # tokenize the concatenated text
+            tokens = tokenizer(text, padding='max_length', max_length=max_len, truncation=True, return_tensors="pt")
+            self.texts.append(tokens)
+            
+        df = df[df['context'] == False]
+        self.labels = df[label_col].values.tolist()
+
+        if accum:
+            try:
+                self.grad = (df['dialog'].value_counts()/batch_size).astype(int).sort_index().tolist()
+                self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+                self.ctr = 0
+            except:
+                self.grad = (df['SCENE'].value_counts()).astype(int).sort_index().tolist()
+                self.grad_sum = [sum(self.grad[:i+1]) for i,x in enumerate(self.grad)]
+                self.ctr = 0
+                
+        
+            
+                
+    
+    def retGradAccum(self , i: int) -> int:
+        RETgrad = self.grad[self.ctr]
+        RETgrad_sum = self.grad_sum[self.ctr]
+        if i + 1 == self.grad_sum[self.ctr]:
+            self.ctr += 1
+        if self.ctr == len(self.grad):
+            self.resetCtr()
+        return RETgrad , RETgrad_sum
+
+    def resetCtr(self):
+        self.ctr = 0
+
+    def __len__(self): return len(self.labels)
+
+
+    def __getitem__(self, idx): return self.texts[idx], self.labels[idx]

@@ -1,0 +1,2 @@
+CUDA_VISIBLE_DEVICES=0 wandb agent ddi/MAEncoder_Loss/9xzdweho --count 20 
+CUDA_VISIBLE_DEVICES=1 wandb agent ddi/MAEncoder_Loss/9xzdweho --count 20 
