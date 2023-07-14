@@ -37,3 +37,5 @@ data/*
 
 SingleModels/train_model/__init__.py
 SingleModels/run_slurm/core*
+data_symlink
+FinetuneData/*
